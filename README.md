@@ -56,9 +56,9 @@ memory and around 1% of one CPU core or less.
 - **Colors.** Twelve presets: Classic, Rainbow, Flowing rainbow, solid white, turquoise and
   purple, and gradients from white to pink, red, turquoise, purple, orange and blue. Make your own
   solid color or gradient and save up to 11 of them as presets.
-- **Music only, if you like.** With *React to: Media players*, Wootlight lights up only while a
-  player shows playback in the Windows media controls: YouTube Music, Spotify, a video in your
-  browser. Games and system sounds alone leave your keyboard's lighting alone.
+- **Music only, if you like.** With *React to: Media players*, Wootlight listens only to the player
+  that shows playback in the Windows media controls: YouTube Music, Spotify, a video in your
+  browser. Voice chat in Discord, games and system sounds stay off the keyboard.
 - **Your lighting when silent.** After a few seconds of silence the keyboard shows its own profile
   until sound comes back. When Wootlight quits, the profile comes back too.
 - **A live view.** The window shows the keyboard exactly as it is lit, or a plain equalizer of the
@@ -143,7 +143,7 @@ language.
 | `fps` | `120.0` | Analysis rate while the window is closed (30 – 360); with the window open it follows the monitor. |
 | `hue_speed` | `0.08` | Turns per second of *Flowing rainbow*. |
 | `audio_device` | `""` | Part of the name of the output device to show; empty follows the Windows default. |
-| `media_only` | `false` | React only while a player shows playback in the Windows media controls. |
+| `media_only` | `false` | Listen only to the player that shows playback in the Windows media controls. |
 | `release_when_silent` | `true` | Show the keyboard's own lighting while nothing plays. |
 | `release_after_sec` | `3.0` | Seconds of silence before that (0.5 – 600). |
 
@@ -184,8 +184,11 @@ the audio level and how often the top row lights up to the log every 5 seconds.
    hardware. The window draws at the monitor's refresh rate and stops drawing while hidden or
    minimized.
 
-*React to: Media players* asks the Windows media controls whether a player is playing. While one
-is, the keyboard shows the whole output, because Windows mixes the sound of all apps together.
+*React to: Media players* asks the Windows media controls which player is playing, finds its
+process among the apps that make sound, and records that process alone (process loopback, Windows
+10 version 2004 or later). The status line under the live view then names the player instead of
+the device. A browser counts as one app, so all of its tabs are heard together. If Wootlight
+cannot tell which process plays, it listens to the whole device while the player plays.
 
 ## Building from source
 
@@ -232,8 +235,7 @@ One test creates and deletes a Task Scheduler task named *Wootlight.Test*.
 - [Wooting RGB SDK](https://github.com/WootingKb/wooting-rgb-sdk) drives the keyboard lighting.
 - The LED positions were checked against the Wooting matrix maps of
   [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB).
-- The interface follows the design system of [OpenChatMix](https://github.com/Swiftlyx/OpenChatMix):
-  Material 3 Expressive for the desktop.
+- The interface follows [Material 3 Expressive](https://m3.material.io/) by Google.
 
 Wootlight is not affiliated with or endorsed by Wooting. Wooting is a trademark of its owner.
 

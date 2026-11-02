@@ -9,6 +9,7 @@ mod engine;
 mod layout;
 mod logging;
 mod media;
+mod player;
 mod paths;
 mod render;
 mod sdk;

@@ -19,14 +19,15 @@ impl MediaSessions {
         Ok(Self { manager: SessionManager::RequestAsync()?.join()? })
     }
 
-    /// True while any session reports playback.
-    pub fn playing(&self) -> Result<bool> {
+    /// The app of every session (its AppUserModelID) and whether it reports playback.
+    pub fn sessions(&self) -> Result<Vec<(String, bool)>> {
         let sessions = self.manager.GetSessions()?;
+        let mut out = Vec::new();
         for i in 0..sessions.Size()? {
-            if sessions.GetAt(i)?.GetPlaybackInfo()?.PlaybackStatus()? == PlaybackStatus::Playing {
-                return Ok(true);
-            }
+            let session = sessions.GetAt(i)?;
+            let playing = session.GetPlaybackInfo()?.PlaybackStatus()? == PlaybackStatus::Playing;
+            out.push((session.SourceAppUserModelId()?.to_string(), playing));
         }
-        Ok(false)
+        Ok(out)
     }
 }

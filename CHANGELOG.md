@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0 — 2026-11-02
+
+- *React to: Media players* now listens to the playing player alone, so voice chat in Discord,
+  games and system sounds no longer move the bars while music plays. Wootlight finds the player's
+  process from the Windows media controls and records that process only (Windows 10 version 2004
+  or later); the status line names the player. When it cannot tell which process plays, it listens
+  to the whole device as before.
+- A purple icon.
+- The README explains why the bars stay dim after Wootility's *Dim After* has dimmed the keyboard:
+  only a key press lifts it.
+
 ## 1.0.0 — 2026-11-02
 
 First public release.

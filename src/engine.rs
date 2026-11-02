@@ -20,6 +20,7 @@ use crate::{
     layout::Layout,
     log,
     media::MediaSessions,
+    player::{self, App},
     render::{FRAME_LEN, Frame, Renderer},
     sdk::{KeyboardInfo, Sdk},
     settings::Settings,
@@ -31,6 +32,8 @@ const IDLE_POLL: Duration = Duration::from_millis(100);
 const DEVICE_CHECK: Duration = Duration::from_secs(2);
 const MEDIA_POLL: Duration = Duration::from_millis(250);
 const MEDIA_RETRY: Duration = Duration::from_secs(10);
+/// How often the playing app is matched to its process again, to follow restarts.
+const MEDIA_REMATCH: Duration = Duration::from_secs(5);
 const STATS_EVERY: Duration = Duration::from_secs(5);
 /// Bar height at which a 6-row keyboard shows its top-row key at half fill.
 const TOP_ROW_HALF_LIT: f32 = 5.5 / 6.0;
@@ -132,6 +135,9 @@ pub struct Shared {
     wants_lighting: AtomicBool,
     /// Set by the media thread: a player reports playback, or the media check is off or unavailable.
     media_playing: AtomicBool,
+    /// The app whose sound media-only mode captures alone; `media_app_version` moves with it.
+    media_app: Mutex<Option<App>>,
+    media_app_version: AtomicU64,
     outbox: Mutex<Outbox>,
     outbox_changed: Condvar,
     /// Refresh rate of the monitor showing the window, 0 while it is hidden.
@@ -152,6 +158,8 @@ impl Shared {
             keyboard_missing: AtomicBool::new(false),
             wants_lighting: AtomicBool::new(false),
             media_playing: AtomicBool::new(true),
+            media_app: Mutex::new(None),
+            media_app_version: AtomicU64::new(0),
             outbox: Mutex::new(Outbox { seq: 0, generation: 0, frame: [0; FRAME_LEN] }),
             outbox_changed: Condvar::new(),
             ui_hz: AtomicU32::new(0),
@@ -176,6 +184,18 @@ impl Shared {
     fn media_only(&self) -> bool {
         let s = self.settings.lock().unwrap_or_else(|e| e.into_inner());
         s.enabled && s.media_only
+    }
+
+    fn set_media_app(&self, app: Option<App>) {
+        let mut current = self.media_app.lock().unwrap_or_else(|e| e.into_inner());
+        if *current != app {
+            *current = app;
+            self.media_app_version.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn media_app(&self) -> Option<App> {
+        self.media_app.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn set_settings(&self, settings: Settings) {
@@ -334,12 +354,15 @@ pub fn start(shared: &Arc<Shared>) -> std::io::Result<Vec<JoinHandle<()>>> {
     Ok(handles)
 }
 
-/// Tracks whether a player reports playback, for the media-only mode.
+/// Tracks whether a player reports playback, and which process plays it, for the media-only mode.
 fn run_media(shared: &Shared) {
     // SAFETY: balanced by CoUninitialize at the end of this function, on the same thread.
     let com = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
     let mut sessions: Option<MediaSessions> = None;
     let mut next_connect = Instant::now();
+    // The app last seen playing and its process; kept while paused so its capture stays open.
+    let mut matched: Option<(String, Option<App>)> = None;
+    let mut next_match = Instant::now();
     while !shared.quitting() {
         let playing = if shared.media_only() {
             if sessions.is_none() && Instant::now() >= next_connect {
@@ -351,8 +374,27 @@ fn run_media(shared: &Shared) {
                     }
                 }
             }
-            match sessions.as_ref().map(MediaSessions::playing) {
-                Some(Ok(playing)) => playing,
+            match sessions.as_ref().map(MediaSessions::sessions) {
+                Some(Ok(list)) => {
+                    let now = Instant::now();
+                    let playing_id = list.into_iter().find(|(_, playing)| *playing).map(|(id, _)| id);
+                    if let Some(id) = &playing_id {
+                        let changed = matched.as_ref().is_none_or(|(seen, _)| seen != id);
+                        if changed || now >= next_match {
+                            let app = player::find(id);
+                            if changed || matched.as_ref().is_some_and(|(_, seen)| *seen != app) {
+                                match &app {
+                                    Some(a) => log!("media: {id} plays from {} (pid {})", a.exe, a.root),
+                                    None => log!("media: {id} plays from no process found, listening to the whole device"),
+                                }
+                            }
+                            shared.set_media_app(app.clone());
+                            matched = Some((id.clone(), app));
+                            next_match = now + MEDIA_REMATCH;
+                        }
+                    }
+                    playing_id.is_some()
+                }
                 Some(Err(e)) => {
                     log!("media controls failed: {e}");
                     sessions = None;
@@ -363,6 +405,9 @@ fn run_media(shared: &Shared) {
             }
         } else {
             sessions = None;
+            if matched.take().is_some() {
+                shared.set_media_app(None);
+            }
             true
         };
         shared.media_playing.store(playing, Ordering::Relaxed);
@@ -492,6 +537,10 @@ fn run_analysis(shared: &Shared) {
     let mut seen_version = 0;
     let mut capture: Option<Capture> = None;
     let mut next_capture_try = Instant::now();
+    // The app media-only mode captures alone, and one whose capture failed, not to be retried.
+    let mut media_app: Option<App> = None;
+    let mut seen_media_app = 0;
+    let mut failed_app: Option<u32> = None;
     let mut next_device_check = Instant::now();
     let mut pipeline: Option<Pipeline> = None;
     // Settings version, keyboard version and sample rate the pipeline was built for.
@@ -549,8 +598,27 @@ fn run_analysis(shared: &Shared) {
             capture = None;
             next_capture_try = now + Duration::from_millis(500);
         }
+        let media_app_version = shared.media_app_version.load(Ordering::SeqCst);
+        if media_app_version != seen_media_app {
+            media_app = shared.media_app();
+            seen_media_app = media_app_version;
+        }
+        // Media-only mode listens to the playing app alone, so voice chat and games stay out.
+        let wanted_app = media_app.as_ref().filter(|app| settings.media_only && failed_app != Some(app.root));
+        if capture.as_ref().is_some_and(|c| c.app_root != wanted_app.map(|app| app.root)) {
+            capture = None;
+            next_capture_try = now;
+        }
         if capture.is_none() && now >= next_capture_try {
-            match Capture::open(&host, &settings.audio_device) {
+            let wanted_app_root = wanted_app.map(|app| app.root);
+            let opened = match wanted_app {
+                Some(app) => Capture::open_app(app).inspect_err(|e| {
+                    log!("capturing {} alone failed: {e}; listening to the whole device", app.exe);
+                    failed_app = Some(app.root);
+                }),
+                None => Capture::open(&host, &settings.audio_device),
+            };
+            match opened {
                 Ok(c) => {
                     log!("audio: {} @ {} Hz", c.name, c.sample_rate);
                     let name = c.name.clone();
@@ -560,6 +628,8 @@ fn run_analysis(shared: &Shared) {
                     });
                     capture = Some(c);
                 }
+                // The whole device takes over at once from an app that cannot be captured alone.
+                Err(_) if wanted_app_root.is_some() && wanted_app_root == failed_app => {}
                 Err(e) => {
                     log!("audio open failed: {e}");
                     shared.update_status(|s| {

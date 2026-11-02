@@ -29,7 +29,7 @@ pub struct Settings {
     pub fps: f32,
     pub hue_speed: f32,
     pub audio_device: String,
-    /// React only while a player reports playback to the Windows media controls.
+    /// Listen only to the player that reports playback to the Windows media controls.
     pub media_only: bool,
     /// Hand the lighting back to the keyboard while nothing plays.
     pub release_when_silent: bool,
@@ -158,8 +158,8 @@ const COMMENTS: &[(&str, &str, &str)] = &[
     ),
     (
         "media_only",
-        "React only while a player shows playback in the Windows media controls (YouTube Music, Spotify...).\nGames and system sounds alone are ignored.",
-        "Реагувати лише тоді, коли плеєр показує відтворення в медіаелементах Windows (YouTube Music, Spotify...).\nСамі лише ігри та системні звуки ігноруються.",
+        "Listen only to the player that shows playback in the Windows media controls (YouTube Music, Spotify...).\nVoice chat, games and system sounds are left out.",
+        "Слухати лише плеєр, що показує відтворення в медіаелементах Windows (YouTube Music, Spotify...).\nГолосовий чат, ігри та системні звуки не враховуються.",
     ),
     (
         "release_when_silent",
