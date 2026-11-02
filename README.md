@@ -13,6 +13,12 @@
   English · <a href="README.uk.md">Українська</a>
 </p>
 
+<p align="center">
+  Wootlight is free and open source. If you'd like to say thanks, you can support it on
+  <a href="https://ko-fi.com/swiftlyx">Ko-fi</a> or through a <a href="https://send.monobank.ua/jar/8C2ACvGoty">monobank jar</a>. Entirely optional:
+  bug reports and tests on other Wooting models help just as much.
+</p>
+
 ---
 
 Wootlight listens to the sound your PC plays, splits it into frequency bands and lights every column
@@ -209,6 +215,11 @@ One test creates and deletes a Task Scheduler task named *Wootlight.Test*.
 - **The bars do not move.** Check *Sound → Audio source*. With *React to: Media players* the
   keyboard waits for a player in the Windows media controls; switch to *Any sound* to see every
   sound.
+- **The bars are dimmer than usual.** Wootility's *Dim After* dims the keyboard when you have not
+  typed for a while. If it dimmed before the music started, the keyboard keeps that brightness under
+  Wootlight too, until you press any key. Wootlight cannot lift it: the firmware takes no command
+  for that. Press a key (a media key on the keyboard to start the music works too), set *Dim After*
+  to a longer time or turn it off. While Wootlight drives the lighting, the keyboard does not dim.
 - **The bars rarely reach the top, or always sit there.** Change the sensitivity, or turn *Even out
   frequencies* on or off.
 - **It did not start with Windows.** Check that the *Wootlight* task exists in Task Scheduler and

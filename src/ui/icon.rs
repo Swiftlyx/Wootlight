@@ -202,14 +202,15 @@ mod tests {
 mod export {
     use super::*;
 
-    /// Writes the app mark in the default color scheme as raw RGBA, one file per size, for
+    /// Writes the app mark in the colors of the Purple preset as raw RGBA, one file per size, for
     /// `assets/`: `cargo test export_mark -- --ignored`.
     #[test]
     #[ignore]
     fn export_mark() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/icon");
         std::fs::create_dir_all(&dir).unwrap();
-        let seed = crate::ui::seed_for(&crate::settings::Settings::default());
+        let purple = crate::settings::Settings { color: "#9020ff".into(), ..Default::default() };
+        let seed = crate::ui::seed_for(&purple);
         for size in [16, 20, 24, 32, 40, 48, 64, 96, 128, 256, 512] {
             std::fs::write(dir.join(format!("mark-{size}.rgba")), render_rgba(size, Mark::Live, seed, true)).unwrap();
         }
