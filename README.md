@@ -1,0 +1,232 @@
+<p align="center">
+  <img src="assets/Wootlight-256.png" width="112" alt="Wootlight icon">
+</p>
+
+<h1 align="center">Wootlight</h1>
+
+<p align="center">
+  A music spectrum visualizer for the lighting of Wooting keyboards: whatever plays on your PC
+  becomes equalizer bars across your keys.
+</p>
+
+<p align="center">
+  English · <a href="README.uk.md">Українська</a>
+</p>
+
+---
+
+Wootlight listens to the sound your PC plays, splits it into frequency bands and lights every column
+of keys as one bar: bass on the left, treble on the right, the louder the band the higher the bar.
+The other keys stay dark. When the music stops, the keyboard goes back to its own lighting, the
+profile you set up in Wootility, and Wootlight takes over again as soon as sound returns.
+
+It is a single native executable that lives in the tray. There is no installer and no driver. Your
+settings are kept in a file next to the executable. Running in the tray it needs about 30 MB of
+memory and around 1% of one CPU core or less.
+
+<p align="center">
+  <img src="docs/screenshots/keyboard.png" width="260" alt="Live keyboard view and color presets">
+  &nbsp;
+  <img src="docs/screenshots/equalizer.png" width="260" alt="Equalizer view and sound settings">
+  &nbsp;
+  <img src="docs/screenshots/settings.png" width="260" alt="Settings">
+</p>
+
+## Contents
+
+- [Features](#features) · [Supported keyboards](#supported-keyboards)
+- [Getting started](#getting-started) · [Usage](#usage) · [Settings file](#settings-file)
+- [How it works](#how-it-works) · [Building from source](#building-from-source) ·
+  [Troubleshooting](#troubleshooting) · [Acknowledgements](#acknowledgements) · [License](#license)
+
+## Features
+
+- **Fits your keyboard.** Wootlight detects the model and lays the bars over its real key
+  positions, ANSI or ISO. Wide keys such as Shift, Enter and Space light up with the average of the
+  bars above them.
+- **The whole range, evenly.** Bands are spread evenly over the octaves from 20 Hz to 20 kHz, so
+  bass, mids and treble each get their share of the width. *Even out frequencies* lifts quiet bands
+  such as deep bass and the air above 13 kHz, so the whole keyboard moves.
+- **Colors.** Twelve presets: Classic, Rainbow, Flowing rainbow, solid white, turquoise and
+  purple, and gradients from white to pink, red, turquoise, purple, orange and blue. Make your own
+  solid color or gradient and save up to 11 of them as presets.
+- **Music only, if you like.** With *React to: Media players*, Wootlight lights up only while a
+  player shows playback in the Windows media controls: YouTube Music, Spotify, a video in your
+  browser. Games and system sounds alone leave your keyboard's lighting alone.
+- **Your lighting when silent.** After a few seconds of silence the keyboard shows its own profile
+  until sound comes back. When Wootlight quits, the profile comes back too.
+- **A live view.** The window shows the keyboard exactly as it is lit, or a plain equalizer of the
+  same bands with a frequency scale, so you can see how the two compare. It draws at your monitor's
+  refresh rate.
+- **Small and quiet.** One executable, portable settings, *Start with Windows* without
+  administrator rights. English and Ukrainian, light and dark themes.
+
+## Supported keyboards
+
+| Model | Bars | Rows |
+|---|---|---|
+| Wooting One | 18 | 6 |
+| Wooting Two, Two Lekker, Two HE | 22 | 6 |
+| Wooting 60HE and its variants | 15 | 5 (no function row) |
+| Wooting UwU | 7 | 5 |
+| Wooting 80HE | 17 | 6 |
+
+Wootlight has been tested by hand on the 80HE; the layouts of the other models are covered by
+tests. If you own one of them, a screenshot or a photo in an
+[issue](https://github.com/Swiftlyx/Wootlight/issues) helps a lot. A model Wootlight does not
+know yet still works, as a plain grid.
+
+## Getting started
+
+1. Download `Wootlight.exe` from the [latest release](https://github.com/Swiftlyx/Wootlight/releases/latest).
+2. Put it in a folder you can write to, for example `Documents\Wootlight`. Wootlight keeps its
+   settings in `Wootlight.toml` next to the executable.
+3. Run it. Windows SmartScreen may warn about an unknown publisher, because the executable is not
+   signed: choose *More info* → *Run anyway*.
+
+Requirements: Windows 10 or 11 (64-bit) and a Wooting keyboard. Wootility does not need to run.
+
+## Usage
+
+Wootlight lives in the tray. Its icon is a keycap with equalizer bars in the color of your scheme:
+tall bars while music plays, low bars in silence, an outline while the visualizer is paused.
+
+- **Left click** the icon to open or hide the window.
+- **Right click** for the menu: open the window, turn the visualizer on or off, *Start with
+  Windows*, quit.
+- Starting `Wootlight.exe` again opens the window of the copy that is already running.
+
+At the top of the window is the live view, with the *Keyboard | Equalizer* switch and the main on/off
+switch. Below it are three pages:
+
+- **Look**: the color presets, your own color (*Solid* or *Gradient*, set by hue and saturation),
+  *Save as preset*, and brightness. Pick a saved preset to adjust it with the sliders or delete it.
+- **Sound**: sensitivity (how often the bars reach the top row), the frequency range (20 Hz – 5 kHz,
+  30 Hz – 10 kHz, 40 Hz – 16 kHz or 20 Hz – 20 kHz), *Even out frequencies*, the audio source,
+  *React to: Any sound | Media players*, and *Your lighting when silent*.
+- **Settings**: language, theme, *Start with Windows*, the settings file, *Show in folder*.
+
+The window works from the keyboard too: Tab and Shift+Tab move the focus, Enter or Space presses,
+← and → move a slider, Esc closes a list or hides the window.
+
+*Start with Windows* creates a Task Scheduler task, *Wootlight*, that starts the app when you sign
+in. It needs no administrator rights, and moving `Wootlight.exe` to another folder updates the task
+on the next start.
+
+## Settings file
+
+`Wootlight.toml` sits next to `Wootlight.exe`. *Settings → Settings file* opens it in your editor for
+`.toml` files, and changes apply as soon as you save. Each setting has a comment in the interface
+language.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `true` | Visualizer on; `false` gives the lighting back to the keyboard. |
+| `language` | `"en"` | `"en"` or `"uk"`. |
+| `theme` | `"auto"` | `"auto"`, `"light"` or `"dark"`. |
+| `color` | `"classic"` | `"classic"`, `"rainbow"`, `"flow"`, one color like `"#00ffaa"`, or bottom to top like `"#c8c8c8>#ff2a8a"`. |
+| `custom_color` | `"#c8c8c8>#ffb000"` | Your own color, used by *Custom*. |
+| `saved_colors` | `[]` | Saved custom presets, up to 11, in the same format. |
+| `brightness` | `1.0` | 0.0 – 1.0. |
+| `range_db` | `30.0` | dB from the bottom row to the top row (6 – 90): lower is more contrast. |
+| `headroom_db` | `3.0` | How far below the top row the loudest band sits on average (0 – half of `range_db`). |
+| `floor_db` | `-75.0` | Level in dBFS treated as silence (-120 – -20). |
+| `tilt_db` | `2.0` | Treble boost per octave around 1 kHz (-6 – 6). |
+| `equalize` | `1.0` | How strongly quiet bands are lifted (0 – 1); 0 shows the true spectrum. |
+| `fmin`, `fmax` | `20.0`, `20000.0` | Frequency range in Hz. |
+| `fps` | `120.0` | Analysis rate while the window is closed (30 – 360); with the window open it follows the monitor. |
+| `hue_speed` | `0.08` | Turns per second of *Flowing rainbow*. |
+| `audio_device` | `""` | Part of the name of the output device to show; empty follows the Windows default. |
+| `media_only` | `false` | React only while a player shows playback in the Windows media controls. |
+| `release_when_silent` | `true` | Show the keyboard's own lighting while nothing plays. |
+| `release_after_sec` | `3.0` | Seconds of silence before that (0.5 – 600). |
+
+The *Low*, *Medium* and *High* sensitivity presets are pairs of `range_db` and `headroom_db`.
+
+Other files:
+
+| What | Where |
+|---|---|
+| Settings | `Wootlight.toml` next to `Wootlight.exe` |
+| Log, rewritten on every start | `%LOCALAPPDATA%\Wootlight\wootlight.log` |
+| Wooting RGB SDK, unpacked on start | `%LOCALAPPDATA%\Wootlight\wooting-rgb-sdk64.dll` |
+| Start with Windows | Task Scheduler, task *Wootlight* |
+
+If the folder of the executable cannot be written to, such as Program Files, the settings go to
+`%APPDATA%\Wootlight\Wootlight.toml` instead.
+
+Command line: `--open` opens the window right after the start; `--stats` writes the frame rate,
+the audio level and how often the top row lights up to the log every 5 seconds.
+
+## How it works
+
+1. **Capture.** Wootlight records what goes to the output device through WASAPI loopback. It does
+   not touch the sound itself.
+2. **Spectrum.** An FFT splits the sound into bands of equal musical width: each band is the same
+   fraction of an octave. Bass bands use a longer window, so 20, 30 and 45 Hz stay apart.
+3. **Level.** Each band's level in dB is compared with a slow average of the loudest band.
+   Sensitivity sets how far above that average the top row is. *Even out frequencies* pulls each
+   band's average over the last ~4 seconds towards a common level, by up to 30 dB. Bands more than
+   50 dB below the loudest one, or digital silence, stay dark.
+4. **Motion.** Bars rise almost at once and fall smoothly.
+5. **Keys.** The keyboard is divided into strips of equal physical width, one bar each. A key belongs
+   to the strip its center falls in; wide keys take the average of the strips they cover. Each row is
+   one step of height, so the tops of neighbouring bars line up, and only a full bar reaches the top
+   row.
+6. **Lighting.** Frames go to the keyboard through the Wooting RGB SDK. A full frame takes about
+   16 ms over USB, so the keyboard updates up to about 62 times a second: that is the limit of the
+   hardware. The window draws at the monitor's refresh rate and stops drawing while hidden or
+   minimized.
+
+*React to: Media players* asks the Windows media controls whether a player is playing. While one
+is, the keyboard shows the whole output, because Windows mixes the sound of all apps together.
+
+## Building from source
+
+You need a recent stable [Rust](https://rustup.rs) with the MSVC toolchain and the Visual Studio
+Build Tools. The Windows SDK's `rc.exe` embeds the icon and the version information; without it the
+build still works, without them.
+
+```bat
+git clone https://github.com/Swiftlyx/Wootlight
+cd Wootlight
+cargo test
+cargo build --release
+```
+
+The result is `target\release\Wootlight.exe`. The
+[Wooting RGB SDK v1.8.0](https://github.com/WootingKb/wooting-rgb-sdk/releases/tag/v1.8.0) is in
+`vendor\` and is built into the executable. A `wooting-rgb-sdk64.dll` next to the executable takes
+its place.
+
+One test creates and deletes a Task Scheduler task named *Wootlight.Test*.
+
+## Troubleshooting
+
+- **The keyboard does not light up.** Close other apps that control RGB lighting, such as OpenRGB
+  or SignalRGB: only one app can drive the keyboard at a time. Check the status line under the live
+  view: it shows the keyboard and the audio device Wootlight uses.
+- **The bars do not move.** Check *Sound → Audio source*. With *React to: Media players* the
+  keyboard waits for a player in the Windows media controls; switch to *Any sound* to see every
+  sound.
+- **The bars rarely reach the top, or always sit there.** Change the sensitivity, or turn *Even out
+  frequencies* on or off.
+- **It did not start with Windows.** Check that the *Wootlight* task exists in Task Scheduler and
+  points at your `Wootlight.exe`. Turning *Start with Windows* off and on recreates it.
+- **Something else.** The log is in `%LOCALAPPDATA%\Wootlight\wootlight.log`. Please attach it to
+  an [issue](https://github.com/Swiftlyx/Wootlight/issues).
+
+## Acknowledgements
+
+- [Wooting RGB SDK](https://github.com/WootingKb/wooting-rgb-sdk) drives the keyboard lighting.
+- The LED positions were checked against the Wooting matrix maps of
+  [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB).
+- The interface follows the design system of [OpenChatMix](https://github.com/Swiftlyx/OpenChatMix):
+  Material 3 Expressive for the desktop.
+
+Wootlight is not affiliated with or endorsed by Wooting. Wooting is a trademark of its owner.
+
+## License
+
+[MIT](LICENSE). Third-party code and its licenses are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
