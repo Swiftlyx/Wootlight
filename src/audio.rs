@@ -9,13 +9,11 @@ use std::{
         mpsc,
     },
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
 };
 
 use cpal::{
-    Device, DeviceId, ErrorKind, FromSample, Host, SampleFormat, SizedSample, Stream,
-    StreamConfig,
-    traits::{DeviceTrait, HostTrait, StreamTrait},
+    Device, ErrorKind, FromSample, Host, SampleFormat, SizedSample, Stream, StreamConfig,
+    traits::{DeviceTrait, StreamTrait},
 };
 use windows::{
     Win32::{
@@ -38,78 +36,22 @@ use windows::{
     core::{HRESULT, IUnknown, Interface, Ref, implement},
 };
 
-use crate::player::App;
+pub use crate::audio_common::{Capture, default_output_id, output_device_names};
+use crate::{
+    audio_common::{Ring, find_device},
+    player::App,
+};
 
-const RING_SIZE: usize = 1 << 15;
-/// Loopback delivers nothing while the device is idle; treat that as silence.
-const STALE_AFTER: Duration = Duration::from_millis(150);
 /// Sample rate requested from process loopback; the audio engine converts to it.
 const APP_SAMPLE_RATE: u32 = 48000;
 /// 20 ms, in 100 ns units.
 const APP_BUFFER: i64 = 200_000;
 const ACTIVATE_TIMEOUT_MS: u32 = 3000;
 
-struct Ring {
-    buf: Vec<f32>,
-    pos: usize,
-    last_data: Option<Instant>,
-    blocks: u32,
-}
-
-impl Ring {
-    fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Ring { buf: vec![0.0; RING_SIZE], pos: 0, last_data: None, blocks: 0 }))
-    }
-
-    fn push(&mut self, mono: f32) {
-        let pos = self.pos;
-        self.buf[pos] = mono;
-        self.pos = (pos + 1) % self.buf.len();
-    }
-}
-
 /// What a capture keeps alive: a cpal stream, or the thread that reads one app's sound.
-enum Source {
+pub(crate) enum Source {
     Device(#[allow(dead_code)] Stream),
     App(#[allow(dead_code)] AppStream),
-}
-
-pub struct Capture {
-    _source: Source,
-    ring: Arc<Mutex<Ring>>,
-    failed: Arc<AtomicBool>,
-    pub id: Option<DeviceId>,
-    pub name: String,
-    pub sample_rate: u32,
-    /// Topmost process of the app captured alone; None for a whole output device.
-    pub app_root: Option<u32>,
-}
-
-/// Names of all output devices, for the device menu.
-pub fn output_device_names() -> Vec<String> {
-    cpal::default_host()
-        .output_devices()
-        .map(|devices| devices.map(|d| d.to_string()).collect())
-        .unwrap_or_default()
-}
-
-/// Id of the current Windows default output device.
-pub fn default_output_id(host: &Host) -> Option<DeviceId> {
-    host.default_output_device().and_then(|d| d.id().ok())
-}
-
-fn find_device(host: &Host, query: &str) -> Result<Device, String> {
-    if query.is_empty() {
-        return host.default_output_device().ok_or_else(|| "no output device".to_string());
-    }
-    let devices: Vec<Device> = host.output_devices().map_err(|e| e.to_string())?.collect();
-    let needle = query.to_lowercase();
-    devices
-        .iter()
-        .position(|d| d.to_string() == query)
-        .or_else(|| devices.iter().position(|d| d.to_string().to_lowercase().contains(&needle)))
-        .map(|i| devices[i].clone())
-        .ok_or_else(|| format!("device \"{query}\" not found"))
 }
 
 impl Capture {
@@ -157,34 +99,6 @@ impl Capture {
             app_root: Some(app.root),
         })
     }
-
-    pub fn failed(&self) -> bool {
-        self.failed.load(Ordering::Relaxed)
-    }
-
-    /// Time since the stream last delivered samples; None before the first.
-    pub fn data_age(&self) -> Option<Duration> {
-        self.ring.lock().unwrap_or_else(|e| e.into_inner()).last_data.map(|t| t.elapsed())
-    }
-
-    /// Callbacks received since the previous call; for diagnostics.
-    pub fn take_block_count(&self) -> u32 {
-        std::mem::take(&mut self.ring.lock().unwrap_or_else(|e| e.into_inner()).blocks)
-    }
-
-    /// Fills `out` with the newest samples in chronological order, or zeros while idle.
-    pub fn latest(&self, out: &mut [f32]) {
-        let ring = self.ring.lock().unwrap_or_else(|e| e.into_inner());
-        if ring.last_data.is_none_or(|t| t.elapsed() > STALE_AFTER) {
-            out.fill(0.0);
-            return;
-        }
-        let len = ring.buf.len();
-        let start = (ring.pos + len - out.len() % len) % len;
-        for (i, dst) in out.iter_mut().enumerate() {
-            *dst = ring.buf[(start + i) % len];
-        }
-    }
 }
 
 fn build<T>(
@@ -209,8 +123,7 @@ where
                 for frame in data.chunks_exact(channels) {
                     ring.push(frame.iter().map(|s| s.to_sample::<f32>()).sum::<f32>() * scale);
                 }
-                ring.last_data = Some(Instant::now());
-                ring.blocks = ring.blocks.wrapping_add(1);
+                ring.delivered();
             },
             move |err| {
                 // Buffer overruns are recoverable; anything else needs a reopen.
@@ -235,7 +148,7 @@ impl IActivateAudioInterfaceCompletionHandler_Impl for Activated_Impl {
 }
 
 /// Process loopback of one process tree, read on a thread of its own.
-struct AppStream {
+pub(crate) struct AppStream {
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -381,8 +294,7 @@ unsafe fn read_packets(capture: &IAudioCaptureClient, event: HANDLE, ring: &Mute
                             ring.push((frame[0] as f32 + frame[1] as f32) * (0.5 / 32768.0));
                         }
                     }
-                    ring.last_data = Some(Instant::now());
-                    ring.blocks = ring.blocks.wrapping_add(1);
+                    ring.delivered();
                 }
                 capture.ReleaseBuffer(frames)?;
             }
@@ -404,7 +316,7 @@ mod tests {
         let capture = Capture::open_app(&App { root: pid, exe: "test.exe".into() }).expect("open");
         let mut samples = vec![0.0f32; 4096];
         for _ in 0..8 {
-            std::thread::sleep(Duration::from_millis(250));
+            std::thread::sleep(std::time::Duration::from_millis(250));
             capture.latest(&mut samples);
             let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
             println!("peak {peak:.4} blocks {} failed {}", capture.take_block_count(), capture.failed());
