@@ -4,6 +4,7 @@
 
 #[cfg_attr(target_os = "macos", path = "mac/audio.rs")]
 mod audio;
+mod audio_common;
 #[cfg_attr(target_os = "macos", path = "mac/autostart.rs")]
 mod autostart;
 mod dsp;
