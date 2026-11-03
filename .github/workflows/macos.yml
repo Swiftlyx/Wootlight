@@ -1,0 +1,91 @@
+# Builds Wootlight.app for Apple Silicon on pushes to main and on pull requests, and adds the zip
+# to a release once it is published. The Wooting RGB SDK is rebuilt from its pinned source rather
+# than taken from vendor/macos.
+name: macOS
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**"]
+  pull_request:
+    paths-ignore: ["**.md", "docs/**"]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: macos-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: macos-cargo-
+
+      - name: Wooting RGB SDK from source
+        run: |
+          scripts/build-wooting-sdk-macos.sh "$RUNNER_TEMP/sdk"
+          if git diff --quiet vendor/macos; then
+            echo "The rebuilt SDK matches vendor/macos."
+          else
+            echo "::notice::The rebuilt SDK differs from vendor/macos; the app embeds the rebuilt one."
+          fi
+
+      - name: Test
+        run: cargo test
+
+      - name: Bundle
+        run: |
+          scripts/bundle-macos.sh
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          name="Wootlight-$version-macos-arm64"
+          mkdir -p "dist/$name"
+          ditto target/Wootlight.app "dist/$name/Wootlight.app"
+          cp README.md README.uk.md CHANGELOG.md LICENSE THIRD_PARTY_NOTICES.md "dist/$name/"
+          # The zip holds the folder's contents, like the Windows zip; ditto keeps the bundle's
+          # symlinks, modes and signature.
+          ditto -c -k --sequesterRsrc "dist/$name" "dist/$name.zip"
+          unzip -l "dist/$name.zip"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "NAME=$name" >> "$GITHUB_ENV"
+
+      # Artifacts lose file modes, so the zip is uploaded as is.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.NAME }}
+          path: dist/${{ env.NAME }}.zip
+
+      - name: Add to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          [ "$TAG" = "v$VERSION" ] || { echo "::error::Tag $TAG does not match version $VERSION"; exit 1; }
+          cd dist
+          # SHA256SUMS.txt lists every asset: replace this zip's line and keep the others.
+          if gh release download "$TAG" -p SHA256SUMS.txt -O sums.old; then
+            grep -vF "$NAME.zip" sums.old > SHA256SUMS.txt || true
+          fi
+          shasum -a 256 "$NAME.zip" >> SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release upload "$TAG" "$NAME.zip" SHA256SUMS.txt --clobber
