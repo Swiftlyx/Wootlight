@@ -28,6 +28,12 @@ use crate::{
 };
 
 const KEEPALIVE: Duration = Duration::from_secs(1);
+/// Shortest gap between two frames sent to the keyboard. On macOS a back-to-back stream keeps the
+/// keyboard so busy that it lags on keystrokes and can stop showing the lighting at all.
+#[cfg(target_os = "macos")]
+const SEND_INTERVAL: Duration = Duration::from_millis(33);
+#[cfg(not(target_os = "macos"))]
+const SEND_INTERVAL: Duration = Duration::ZERO;
 const RETRY: Duration = Duration::from_secs(1);
 const IDLE_POLL: Duration = Duration::from_millis(100);
 const DEVICE_CHECK: Duration = Duration::from_secs(2);
@@ -867,6 +873,7 @@ fn run_keyboard(shared: &Shared) {
     let mut identified = false;
     let mut generation = 0;
     let mut last_seq = 0;
+    let mut last_frame: Option<Frame> = None;
     let mut last_sent = Instant::now();
     let mut stats = SendStats::default();
 
@@ -895,6 +902,7 @@ fn run_keyboard(shared: &Shared) {
             shared.set_keyboard(info);
             identified = true;
             last_seq = 0;
+            last_frame = None;
             if wanted {
                 connected = true;
                 log!("visualizer took over the lighting");
@@ -915,6 +923,11 @@ fn run_keyboard(shared: &Shared) {
             continue;
         }
 
+        // Waiting out the gap first means the frame picked up below is the freshest one.
+        let gap = SEND_INTERVAL.saturating_sub(last_sent.elapsed());
+        if !gap.is_zero() {
+            shared.sleep(gap);
+        }
         let (next_generation, seq, frame) = shared.wait_change(generation, KEEPALIVE.saturating_sub(last_sent.elapsed()));
         generation = next_generation;
         if shared.quitting() {
@@ -922,6 +935,11 @@ fn run_keyboard(shared: &Shared) {
         }
         // A state change without a new frame: re-check who owns the lighting first.
         if seq == last_seq && last_sent.elapsed() < KEEPALIVE {
+            continue;
+        }
+        // Quiet passages render the same frame over and over; the keyboard already shows it.
+        if last_frame == Some(frame) && last_sent.elapsed() < KEEPALIVE {
+            last_seq = seq;
             continue;
         }
         let started = Instant::now();
@@ -933,6 +951,7 @@ fn run_keyboard(shared: &Shared) {
             continue;
         }
         last_seq = seq;
+        last_frame = Some(frame);
         last_sent = Instant::now();
 
         if shared.stats {
