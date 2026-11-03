@@ -15,6 +15,8 @@ pub mod spring;
 pub mod tray_menu;
 #[cfg_attr(target_os = "macos", path = "mac/window.rs")]
 pub mod window;
+mod widgets;
+mod window_core;
 
 use std::{
     cell::RefCell,
