@@ -440,7 +440,7 @@ fn run_media(shared: &Shared) {
         shared.beat(MEDIA, "waiting");
         let playing = if shared.media_only() {
             if sessions.is_none() && Instant::now() >= next_connect {
-                shared.beat(MEDIA, "connecting to the Windows media controls");
+                shared.beat(MEDIA, if cfg!(windows) { "connecting to the Windows media controls" } else { "connecting to Now Playing" });
                 match MediaSessions::connect() {
                     Ok(s) => sessions = Some(s),
                     Err(e) => {
@@ -449,7 +449,7 @@ fn run_media(shared: &Shared) {
                     }
                 }
             }
-            shared.beat(MEDIA, "reading the Windows media controls");
+            shared.beat(MEDIA, if cfg!(windows) { "reading the Windows media controls" } else { "reading Now Playing" });
             match sessions.as_ref().map(MediaSessions::sessions) {
                 Some(Ok(list)) => {
                     if logged.as_ref() != Some(&list) {
@@ -622,7 +622,7 @@ fn describe_behavior(s: &Settings) -> String {
         "visualizer {}, react to {}, hand back on {release}, audio source {}",
         if s.enabled { "on" } else { "off" },
         if s.media_only { "media players" } else { "any sound" },
-        if s.audio_device.is_empty() { "Windows default" } else { &s.audio_device },
+        if s.audio_device.is_empty() { if cfg!(windows) { "Windows default" } else { "system default" } } else { &s.audio_device },
     )
 }
 

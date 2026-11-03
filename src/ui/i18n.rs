@@ -95,13 +95,20 @@ pub enum T {
 
 pub fn tr(lang: Lang, key: T) -> &'static str {
     use T::*;
-    // macOS names the autostart setting after its own Login Items.
+    // macOS names the autostart setting after its own Login Items, and its media controls Now Playing.
     #[cfg(target_os = "macos")]
-    if key == StartWithWindows {
-        return match lang {
-            Lang::En => "Open at Login",
-            Lang::Uk => "Відкривати під час входу",
-        };
+    match (lang, key) {
+        (Lang::En, StartWithWindows) => return "Open at Login",
+        (Lang::Uk, StartWithWindows) => return "Відкривати під час входу",
+        (Lang::En, WindowsDefault) => return "System default",
+        (Lang::Uk, WindowsDefault) => return "Системний вивід за замовчуванням",
+        (Lang::En, ReactHint) => {
+            return "Media players: only the player that shows playback in Now Playing, like Apple Music, Spotify or YouTube in a browser. Voice chat, games and system sounds are left out.";
+        }
+        (Lang::Uk, ReactHint) => {
+            return "Медіаплеєри: лише плеєр, що показує відтворення в «Зараз відтворюється», як-от Apple Music, Spotify чи YouTube у браузері. Голосовий чат, ігри та системні звуки не враховуються.";
+        }
+        _ => {}
     }
     match lang {
         Lang::En => match key {
