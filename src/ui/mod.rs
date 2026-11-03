@@ -9,6 +9,8 @@ pub mod geometry;
 pub mod i18n;
 #[cfg_attr(target_os = "macos", path = "mac/icon.rs")]
 pub mod icon;
+pub mod mark;
+pub mod menu;
 pub mod palette;
 pub mod spring;
 #[cfg_attr(target_os = "macos", path = "mac/tray_menu.rs")]
