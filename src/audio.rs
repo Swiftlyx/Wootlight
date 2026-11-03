@@ -162,6 +162,11 @@ impl Capture {
         self.failed.load(Ordering::Relaxed)
     }
 
+    /// Time since the stream last delivered samples; None before the first.
+    pub fn data_age(&self) -> Option<Duration> {
+        self.ring.lock().unwrap_or_else(|e| e.into_inner()).last_data.map(|t| t.elapsed())
+    }
+
     /// Callbacks received since the previous call; for diagnostics.
     pub fn take_block_count(&self) -> u32 {
         std::mem::take(&mut self.ring.lock().unwrap_or_else(|e| e.into_inner()).blocks)
@@ -209,8 +214,8 @@ where
             },
             move |err| {
                 // Buffer overruns are recoverable; anything else needs a reopen.
-                if err.kind() != ErrorKind::Xrun {
-                    failed.store(true, Ordering::Relaxed);
+                if err.kind() != ErrorKind::Xrun && !failed.swap(true, Ordering::Relaxed) {
+                    crate::log!("audio stream error: {err}");
                 }
             },
             None,

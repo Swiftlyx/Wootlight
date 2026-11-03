@@ -57,7 +57,10 @@ fn main() {
         return;
     }
     logging::init();
-    log!("Wootlight {} starting", env!("CARGO_PKG_VERSION"));
+    log!("Wootlight {} starting on {}", env!("CARGO_PKG_VERSION"), win::windows_version());
+    if let Ok(exe) = std::env::current_exe() {
+        log!("program: {}", exe.display());
+    }
 
     let config_path = paths::config_file();
     log!("settings: {}", config_path.display());
@@ -81,7 +84,7 @@ fn main() {
         }
     };
     // Runs schtasks.exe; startup does not wait for it.
-    thread::spawn(autostart::refresh);
+    let _ = thread::Builder::new().name("autostart".into()).spawn(autostart::refresh);
 
     let shared = Arc::new(Shared::new(settings, stats));
     let _ = SHARED.set(Arc::clone(&shared));

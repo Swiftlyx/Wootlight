@@ -12,8 +12,8 @@ use windows_sys::Win32::UI::{
 
 use crate::{
     audio, autostart,
-    engine::{Owner, Shared},
-    log,
+    engine::{Owner, Shared, Watchdog},
+    log, logging,
     settings::Settings,
     ui::{
         self, Command, glyph,
@@ -51,6 +51,7 @@ struct App {
     devices: Vec<String>,
     shown_status: String,
     shown_icon: Option<(Mark, [u32; 3], bool)>,
+    watchdog: Watchdog,
 }
 
 impl App {
@@ -166,6 +167,7 @@ impl App {
                 win::open_file(&self.config_path);
             }
             Command::RevealConfig => win::reveal_file(&self.config_path),
+            Command::OpenLog => win::open_file(&logging::path()),
             Command::Quit => return false,
         }
         true
@@ -212,6 +214,7 @@ impl App {
     }
 
     fn on_timer(&mut self) {
+        self.watchdog.check(&self.shared);
         let mtime = modified(&self.config_path);
         if mtime != self.config_mtime {
             self.config_mtime = mtime;
@@ -272,6 +275,7 @@ pub fn run(
         devices,
         shown_status: String::new(),
         shown_icon: None,
+        watchdog: Watchdog::new(),
     };
     app.refresh();
     if open_window {

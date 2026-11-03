@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0 — 2026-11-03
+
+- *Settings → Log* opens the log. Every line has the date, the time and the part of the app that
+  wrote it. The log is kept across starts and moves to `wootlight.old.log` past 1 MB.
+- The log says why the lighting went back to the keyboard: no player playing, the player silent,
+  or no sound from the device. It also lists the players in the Windows media controls, the
+  settings that decide when the visualizer runs, sleep and wake-up, and the Windows version.
+- Crashes are logged with their place: a panic with its source line, a crash in the SDK or another
+  DLL with the module and offset. A part of the app stuck for 5 seconds is logged with what it was
+  doing.
+
 ## 1.1.0 — 2026-11-02
 
 - *React to: Media players* now listens to the playing player alone, so voice chat in Discord,

@@ -100,6 +100,7 @@ const ID_AUTOSTART: u64 = 280;
 const ID_CONFIG: u64 = 281;
 const ID_REVEAL: u64 = 282;
 const ID_QUIT: u64 = 283;
+const ID_LOG: u64 = 284;
 const ID_MENU_ITEM: u64 = 1000;
 
 // Spring properties.
@@ -205,6 +206,7 @@ enum Action {
     Autostart,
     OpenConfig,
     RevealConfig,
+    OpenLog,
     Quit,
 }
 
@@ -1156,6 +1158,7 @@ impl MainWindow {
             Action::Autostart => post(Command::ToggleAutostart),
             Action::OpenConfig => post(Command::OpenConfig),
             Action::RevealConfig => post(Command::RevealConfig),
+            Action::OpenLog => post(Command::OpenLog),
             Action::Quit => post(Command::Quit),
         }
         After::None
@@ -1332,6 +1335,7 @@ impl MainWindow {
                     rows: vec![
                         Row::Nav { id: ID_CONFIG, glyph: glyph::DOCUMENT, title: t(T::SettingsFile).into(), subtitle: t(T::SettingsFileHint).into(), action: Action::OpenConfig },
                         Row::Nav { id: ID_REVEAL, glyph: glyph::FOLDER, title: t(T::ShowInFolder).into(), subtitle: t(T::ShowInFolderHint).into(), action: Action::RevealConfig },
+                        Row::Nav { id: ID_LOG, glyph: glyph::BUG, title: t(T::Log).into(), subtitle: t(T::LogHint).into(), action: Action::OpenLog },
                         Row::Info { label: t(T::Version).into(), value: format!("{} · SDK 1.8.0", env!("CARGO_PKG_VERSION")) },
                     ],
                 });

@@ -35,6 +35,15 @@ const MEDIA_RETRY: Duration = Duration::from_secs(10);
 /// How often the playing app is matched to its process again, to follow restarts.
 const MEDIA_REMATCH: Duration = Duration::from_secs(5);
 const STATS_EVERY: Duration = Duration::from_secs(5);
+/// An engine thread that makes no progress this long is logged as stuck.
+const STUCK_AFTER: Duration = Duration::from_secs(5);
+/// Engine threads, indexing `Shared::beats`.
+const KEYBOARD: usize = 0;
+const ANALYSIS: usize = 1;
+const MEDIA: usize = 2;
+const THREAD_NAMES: [&str; 3] = ["keyboard", "analysis", "media"];
+/// Beat of a thread that has ended; the watchdog ignores it.
+const ENDED: u64 = u64::MAX;
 /// Bar height at which a 6-row keyboard shows its top-row key at half fill.
 const TOP_ROW_HALF_LIT: f32 = 5.5 / 6.0;
 /// Peak sample level (-70 dBFS) above which the output counts as playing.
@@ -142,6 +151,9 @@ pub struct Shared {
     outbox_changed: Condvar,
     /// Refresh rate of the monitor showing the window, 0 while it is hidden.
     ui_hz: AtomicU32,
+    /// Progress counter of each engine thread and what it does now, for the watchdog.
+    beats: [AtomicU64; 3],
+    doing: Mutex<[&'static str; 3]>,
     quit: AtomicBool,
     pub stats: bool,
 }
@@ -163,9 +175,17 @@ impl Shared {
             outbox: Mutex::new(Outbox { seq: 0, generation: 0, frame: [0; FRAME_LEN] }),
             outbox_changed: Condvar::new(),
             ui_hz: AtomicU32::new(0),
+            beats: Default::default(),
+            doing: Mutex::new([""; 3]),
             quit: AtomicBool::new(false),
             stats,
         }
+    }
+
+    /// Marks progress of engine thread `thread` as it starts `doing` something.
+    fn beat(&self, thread: usize, doing: &'static str) {
+        self.doing.lock().unwrap_or_else(|e| e.into_inner())[thread] = doing;
+        self.beats[thread].fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn settings(&self) -> Settings {
@@ -322,24 +342,25 @@ impl Shared {
 
 /// Starts the engine threads; each restarts after a panic until quit.
 pub fn start(shared: &Arc<Shared>) -> std::io::Result<Vec<JoinHandle<()>>> {
-    let spawn = |name: &str, body: fn(&Shared)| {
+    let spawn = |index: usize, body: fn(&Shared)| {
         let shared = Arc::clone(shared);
-        let label = name.to_string();
-        thread::Builder::new().name(label.clone()).spawn(move || {
+        let name = THREAD_NAMES[index];
+        thread::Builder::new().name(name.into()).spawn(move || {
             while !shared.quitting() {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| body(&shared)));
                 if result.is_ok() {
                     break;
                 }
-                log!("{label} thread panicked, restarting");
+                log!("{name} thread panicked, restarting");
                 shared.sleep(RETRY);
             }
+            shared.beats[index].store(ENDED, Ordering::Relaxed);
         })
     };
-    let threads: [(&str, fn(&Shared)); 3] = [("keyboard", run_keyboard), ("analysis", run_analysis), ("media", run_media)];
+    let threads: [(usize, fn(&Shared)); 3] = [(KEYBOARD, run_keyboard), (ANALYSIS, run_analysis), (MEDIA, run_media)];
     let mut handles = Vec::new();
-    for (name, body) in threads {
-        match spawn(name, body) {
+    for (index, body) in threads {
+        match spawn(index, body) {
             Ok(handle) => handles.push(handle),
             Err(e) => {
                 // The keyboard thread restores the lighting on its way out.
@@ -354,6 +375,54 @@ pub fn start(shared: &Arc<Shared>) -> std::io::Result<Vec<JoinHandle<()>>> {
     Ok(handles)
 }
 
+/// Notices engine threads stuck in a call that does not return and logs each episode once.
+pub struct Watchdog {
+    last_check: Instant,
+    seen: [u64; 3],
+    since: [Instant; 3],
+    stuck: [bool; 3],
+}
+
+impl Watchdog {
+    pub fn new() -> Self {
+        let now = Instant::now();
+        Self { last_check: now, seen: [0; 3], since: [now; 3], stuck: [false; 3] }
+    }
+
+    /// Call every second or so from a thread outside the engine.
+    pub fn check(&mut self, shared: &Shared) {
+        let now = Instant::now();
+        // A long gap between checks (sleep, a busy UI thread) does not count against the engine.
+        let gap = now.duration_since(self.last_check) >= STUCK_AFTER;
+        self.last_check = now;
+        let doing = *shared.doing.lock().unwrap_or_else(|e| e.into_inner());
+        for (i, name) in THREAD_NAMES.iter().enumerate() {
+            let beat = shared.beats[i].load(Ordering::Relaxed);
+            if beat != self.seen[i] || beat == ENDED {
+                if self.stuck[i] {
+                    log!("{name} thread running again after {:.0} s", now.duration_since(self.since[i]).as_secs_f32());
+                    self.stuck[i] = false;
+                }
+                self.seen[i] = beat;
+                self.since[i] = now;
+            } else if gap {
+                self.since[i] = now;
+            } else if !self.stuck[i] && now.duration_since(self.since[i]) >= STUCK_AFTER {
+                log!("{name} thread stuck for {} s while {}", STUCK_AFTER.as_secs(), doing[i]);
+                self.stuck[i] = true;
+            }
+        }
+    }
+}
+
+/// "Chrome playing, Spotify not playing", or "none".
+fn describe_sessions(list: &[(String, bool)]) -> String {
+    if list.is_empty() {
+        return "none".into();
+    }
+    list.iter().map(|(id, playing)| format!("{id} {}", if *playing { "playing" } else { "not playing" })).collect::<Vec<_>>().join(", ")
+}
+
 /// Tracks whether a player reports playback, and which process plays it, for the media-only mode.
 fn run_media(shared: &Shared) {
     // SAFETY: balanced by CoUninitialize at the end of this function, on the same thread.
@@ -363,9 +432,13 @@ fn run_media(shared: &Shared) {
     // The app last seen playing and its process; kept while paused so its capture stays open.
     let mut matched: Option<(String, Option<App>)> = None;
     let mut next_match = Instant::now();
+    // Players and their states as last logged.
+    let mut logged: Option<Vec<(String, bool)>> = None;
     while !shared.quitting() {
+        shared.beat(MEDIA, "waiting");
         let playing = if shared.media_only() {
             if sessions.is_none() && Instant::now() >= next_connect {
+                shared.beat(MEDIA, "connecting to the Windows media controls");
                 match MediaSessions::connect() {
                     Ok(s) => sessions = Some(s),
                     Err(e) => {
@@ -374,13 +447,19 @@ fn run_media(shared: &Shared) {
                     }
                 }
             }
+            shared.beat(MEDIA, "reading the Windows media controls");
             match sessions.as_ref().map(MediaSessions::sessions) {
                 Some(Ok(list)) => {
+                    if logged.as_ref() != Some(&list) {
+                        log!("media players: {}", describe_sessions(&list));
+                        logged = Some(list.clone());
+                    }
                     let now = Instant::now();
                     let playing_id = list.into_iter().find(|(_, playing)| *playing).map(|(id, _)| id);
                     if let Some(id) = &playing_id {
                         let changed = matched.as_ref().is_none_or(|(seen, _)| seen != id);
                         if changed || now >= next_match {
+                            shared.beat(MEDIA, "matching the player to its process");
                             let app = player::find(id);
                             if changed || matched.as_ref().is_some_and(|(_, seen)| *seen != app) {
                                 match &app {
@@ -398,6 +477,7 @@ fn run_media(shared: &Shared) {
                 Some(Err(e)) => {
                     log!("media controls failed: {e}");
                     sessions = None;
+                    next_connect = Instant::now() + RETRY;
                     true
                 }
                 // Without the media controls every sound counts.
@@ -405,6 +485,7 @@ fn run_media(shared: &Shared) {
             }
         } else {
             sessions = None;
+            logged = None;
             if matched.take().is_some() {
                 shared.set_media_app(None);
             }
@@ -531,6 +612,31 @@ fn format_row(values: &[f32], scale: f32, digits: usize) -> String {
     values.iter().map(|v| format!("{:.*}", digits, v * scale)).collect::<Vec<_>>().join(" ")
 }
 
+/// The settings that decide when the visualizer drives the lighting, for the log.
+fn describe_behavior(s: &Settings) -> String {
+    let release = if s.release_when_silent { format!("silence after {} s", s.release_after_sec) } else { "never".into() };
+    format!(
+        "visualizer {}, react to {}, hand back on {release}, audio source {}",
+        if s.enabled { "on" } else { "off" },
+        if s.media_only { "media players" } else { "any sound" },
+        if s.audio_device.is_empty() { "Windows default" } else { &s.audio_device },
+    )
+}
+
+/// Why the analysis heard nothing for a while, for the log.
+fn silence_reason(settings: &Settings, media_playing: bool, capture: Option<&Capture>) -> String {
+    if settings.media_only && !media_playing {
+        return "no player is playing".into();
+    }
+    let Some(c) = capture else { return "no audio source is open".into() };
+    let while_playing = if settings.media_only { " while a player is playing" } else { "" };
+    match c.data_age() {
+        Some(age) if age < Duration::from_secs(1) => format!("{} is silent{while_playing}", c.name),
+        Some(age) => format!("no sound data from {} for {:.0} s{while_playing}", c.name, age.as_secs_f32()),
+        None => format!("no sound data from {} since it opened{while_playing}", c.name),
+    }
+}
+
 fn run_analysis(shared: &Shared) {
     let host: Host = cpal::default_host();
     let mut settings = shared.settings();
@@ -548,6 +654,8 @@ fn run_analysis(shared: &Shared) {
     let mut known: Option<KeyboardInfo> = None;
     let mut seen_keyboard = 0;
     let mut silence = SilenceGate::default();
+    let mut owned = false;
+    let mut behavior = String::new();
     let mut samples = vec![0.0f32; WINDOW];
     let mut frame: Frame = [0; FRAME_LEN];
     let mut last_tick = Instant::now();
@@ -555,6 +663,7 @@ fn run_analysis(shared: &Shared) {
     let mut stats = Stats::default();
 
     while !shared.quitting() {
+        shared.beat(ANALYSIS, "analysing the sound");
         let version = shared.version.load(Ordering::SeqCst);
         if version != seen_version {
             let fresh = shared.settings();
@@ -564,12 +673,18 @@ fn run_analysis(shared: &Shared) {
             }
             settings = fresh;
             seen_version = version;
+            let described = describe_behavior(&settings);
+            if described != behavior {
+                log!("settings: {described}");
+                behavior = described;
+            }
         }
 
         if !settings.enabled {
             capture = None;
             pipeline = None;
             silence = SilenceGate::default();
+            owned = false;
             shared.set_wants_lighting(false);
             shared.publish_paused();
             shared.update_status(|s| {
@@ -610,6 +725,7 @@ fn run_analysis(shared: &Shared) {
             next_capture_try = now;
         }
         if capture.is_none() && now >= next_capture_try {
+            shared.beat(ANALYSIS, "opening the audio capture");
             let wanted_app_root = wanted_app.map(|app| app.root);
             let opened = match wanted_app {
                 Some(app) => Capture::open_app(app).inspect_err(|e| {
@@ -645,12 +761,24 @@ fn run_analysis(shared: &Shared) {
             None => samples.fill(0.0),
         }
         // Media-only mode treats everything as silence while no player reports playback.
-        if settings.media_only && !shared.media_playing.load(Ordering::Relaxed) {
+        let media_playing = shared.media_playing.load(Ordering::Relaxed);
+        if settings.media_only && !media_playing {
             samples.fill(0.0);
         }
 
         let release_after = Duration::from_secs_f32(settings.release_after_sec);
         let owns = silence.update(&samples, now, release_after) || !settings.release_when_silent;
+        if owns != owned {
+            let source = capture.as_ref().map_or("no audio source", |c| c.name.as_str());
+            if !owns {
+                log!("{}: handing the lighting back", silence_reason(&settings, media_playing, capture.as_ref()));
+            } else if settings.release_when_silent {
+                log!("sound from {source}: taking the lighting");
+            } else {
+                log!("taking the lighting (no hand-back on silence), listening to {source}");
+            }
+            owned = owns;
+        }
         shared.set_wants_lighting(owns);
         shared.update_status(|s| s.idle = !owns);
 
@@ -723,6 +851,7 @@ struct SendStats {
 }
 
 fn run_keyboard(shared: &Shared) {
+    shared.beat(KEYBOARD, "loading the Wooting SDK");
     let sdk = match Sdk::load() {
         Ok(sdk) => sdk,
         Err(e) => {
@@ -739,11 +868,13 @@ fn run_keyboard(shared: &Shared) {
     let mut stats = SendStats::default();
 
     while !shared.quitting() {
+        shared.beat(KEYBOARD, "waiting");
         let enabled = shared.enabled();
         let wanted = enabled && shared.wants_lighting.load(Ordering::SeqCst);
 
         // Identify the board once at start, and connect whenever the visualizer takes over.
         if !identified || (wanted && !connected) {
+            shared.beat(KEYBOARD, "connecting to the keyboard");
             if !sdk.connect() {
                 if !shared.keyboard_missing.swap(true, Ordering::SeqCst) {
                     log!("keyboard not found");
@@ -771,9 +902,10 @@ fn run_keyboard(shared: &Shared) {
         }
 
         if connected && !wanted {
+            shared.beat(KEYBOARD, "handing the lighting back");
             sdk.close();
             connected = false;
-            log!("{}", if enabled { "silence: lighting handed back to the keyboard" } else { "paused, lighting restored" });
+            log!("{}", if enabled { "lighting handed back to the keyboard" } else { "paused, lighting restored" });
         }
         if !connected {
             generation = shared.wait_change(generation, IDLE_POLL).0;
@@ -790,6 +922,7 @@ fn run_keyboard(shared: &Shared) {
             continue;
         }
         let started = Instant::now();
+        shared.beat(KEYBOARD, "sending a frame to the keyboard");
         if !sdk.show(&frame) {
             log!("keyboard disconnected");
             connected = false;

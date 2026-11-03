@@ -39,6 +39,7 @@ pub enum Command {
     Apply { settings: Box<Settings>, save: bool },
     OpenConfig,
     RevealConfig,
+    OpenLog,
     Quit,
 }
 
@@ -118,6 +119,7 @@ pub mod glyph {
     pub const SYNC: char = '\u{E895}';
     pub const EDIT: char = '\u{E70F}';
     pub const FOLDER: char = '\u{E838}';
+    pub const BUG: char = '\u{EBE8}';
     pub const ADD: char = '\u{E710}';
     pub const DELETE: char = '\u{E74D}';
 }

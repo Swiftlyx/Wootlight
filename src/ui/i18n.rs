@@ -89,6 +89,8 @@ pub enum T {
     ColorBottom,
     ShowInFolder,
     ShowInFolderHint,
+    Log,
+    LogHint,
 }
 
 pub fn tr(lang: Lang, key: T) -> &'static str {
@@ -170,6 +172,8 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
             ColorBottom => "Bottom",
             ShowInFolder => "Show in folder",
             ShowInFolderHint => "Opens Explorer with the settings file selected",
+            Log => "Log",
+            LogHint => "What Wootlight did and why. Attach it to a bug report",
         },
         Lang::Uk => match key {
             AppName => "Wootlight",
@@ -247,6 +251,8 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
             ColorBottom => "Низ",
             ShowInFolder => "Показати в папці",
             ShowInFolderHint => "Відкриває Провідник із виділеним файлом налаштувань",
+            Log => "Журнал",
+            LogHint => "Що робив Wootlight і чому. Додайте його до звіту про помилку",
         },
     }
 }

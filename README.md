@@ -154,7 +154,7 @@ Other files:
 | What | Where |
 |---|---|
 | Settings | `Wootlight.toml` next to `Wootlight.exe` |
-| Log, rewritten on every start | `%LOCALAPPDATA%\Wootlight\wootlight.log` |
+| Log, kept across starts; past 1 MB it moves to `wootlight.old.log` | `%LOCALAPPDATA%\Wootlight\wootlight.log` |
 | Wooting RGB SDK, unpacked on start | `%LOCALAPPDATA%\Wootlight\wooting-rgb-sdk64.dll` |
 | Start with Windows | Task Scheduler, task *Wootlight* |
 
@@ -227,8 +227,11 @@ One test creates and deletes a Task Scheduler task named *Wootlight.Test*.
   frequencies* on or off.
 - **It did not start with Windows.** Check that the *Wootlight* task exists in Task Scheduler and
   points at your `Wootlight.exe`. Turning *Start with Windows* off and on recreates it.
-- **Something else.** The log is in `%LOCALAPPDATA%\Wootlight\wootlight.log`. Please attach it to
-  an [issue](https://github.com/Swiftlyx/Wootlight/issues).
+- **It stops now and then, or something else.** Open *Settings → Log*. Each line has the time and
+  says what happened: when the lighting went back to the keyboard and why (no player playing, the
+  player silent, no sound from the device), which player and keyboard Wootlight found, a part of the
+  app that got stuck, and where it crashed. Please attach the log to an
+  [issue](https://github.com/Swiftlyx/Wootlight/issues).
 
 ## Acknowledgements
 

@@ -8,16 +8,18 @@ use std::{
     os::windows::process::CommandExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    ptr,
     sync::atomic::{AtomicU8, Ordering},
 };
 
 use windows_sys::Win32::{
     Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS},
-    System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW},
+    System::Registry::{HKEY_CURRENT_USER, RegDeleteKeyValueW},
 };
 
-use crate::{log, win::wide};
+use crate::{
+    log,
+    win::{self, wide},
+};
 
 const TASK_NAME: &str = "Wootlight";
 /// Task name of versions before the rename.
@@ -31,42 +33,6 @@ const OFF: u8 = 1;
 const ON: u8 = 2;
 /// Whether the task exists, as last seen or set by this process.
 static STATE: AtomicU8 = AtomicU8::new(UNKNOWN);
-
-fn read(key: &str, name: &str) -> Option<String> {
-    let key = wide(key);
-    let name = wide(name);
-    let mut size = 0u32;
-    // SAFETY: size query first, then a buffer of that size.
-    unsafe {
-        if RegGetValueW(
-            HKEY_CURRENT_USER,
-            key.as_ptr(),
-            name.as_ptr(),
-            RRF_RT_REG_SZ,
-            ptr::null_mut(),
-            ptr::null_mut(),
-            &mut size,
-        ) != ERROR_SUCCESS
-        {
-            return None;
-        }
-        let mut buf = vec![0u16; (size as usize).div_ceil(2)];
-        if RegGetValueW(
-            HKEY_CURRENT_USER,
-            key.as_ptr(),
-            name.as_ptr(),
-            RRF_RT_REG_SZ,
-            ptr::null_mut(),
-            buf.as_mut_ptr().cast(),
-            &mut size,
-        ) != ERROR_SUCCESS
-        {
-            return None;
-        }
-        let len = buf.iter().position(|c| *c == 0).unwrap_or(buf.len());
-        Some(String::from_utf16_lossy(&buf[..len]))
-    }
-}
 
 fn delete(key: &str, name: &str) -> bool {
     let key = wide(key);
@@ -200,7 +166,7 @@ pub fn set_enabled(enabled: bool) -> bool {
 /// executable, e.g. after it was moved. Spawns schtasks: call it off the UI thread.
 pub fn refresh() {
     let Ok(exe) = env::current_exe() else { return };
-    let legacy_run = read(LEGACY_RUN_KEY, LEGACY_VALUE_NAME).is_some();
+    let legacy_run = win::reg_string(HKEY_CURRENT_USER, LEGACY_RUN_KEY, LEGACY_VALUE_NAME).is_some();
     let legacy_task = query(LEGACY_TASK_NAME).is_some();
     let current = query(TASK_NAME);
     let stale = current.as_ref().is_some_and(|xml| !xml.to_lowercase().contains(&exe.display().to_string().to_lowercase()));

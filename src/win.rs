@@ -8,18 +8,20 @@ use std::{
 };
 
 use windows_sys::Win32::{
-    Foundation::{ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, WPARAM},
+    Foundation::{ERROR_ALREADY_EXISTS, ERROR_SUCCESS, GetLastError, HWND, LPARAM, LRESULT, WPARAM},
     System::{
         Com::{COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoUninitialize},
         LibraryLoader::GetModuleHandleW,
+        Registry::{HKEY, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW},
         Threading::CreateMutexW,
     },
     UI::{
         Shell::{SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, ShellExecuteExW},
         WindowsAndMessaging::{
             CreateWindowExW, DefWindowProcW, FindWindowW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK,
-            MessageBoxW, PostMessageW, PostQuitMessage, RegisterClassW, SW_SHOWNORMAL, WM_APP, WM_CLOSE,
-            WM_ENDSESSION, WM_QUERYENDSESSION, WNDCLASSW, WS_OVERLAPPED,
+            MessageBoxW, PBT_APMRESUMEAUTOMATIC, PBT_APMSUSPEND, PostMessageW, PostQuitMessage, RegisterClassW,
+            SW_SHOWNORMAL, WM_APP, WM_CLOSE, WM_ENDSESSION, WM_POWERBROADCAST, WM_QUERYENDSESSION, WNDCLASSW,
+            WS_OVERLAPPED,
         },
     },
 };
@@ -40,6 +42,39 @@ pub fn acquire_single_instance() -> bool {
         let handle = CreateMutexW(ptr::null(), 0, name.as_ptr());
         !handle.is_null() && GetLastError() != ERROR_ALREADY_EXISTS
     }
+}
+
+/// A REG_SZ value, or None if it is missing.
+pub fn reg_string(root: HKEY, key: &str, name: &str) -> Option<String> {
+    let key = wide(key);
+    let name = wide(name);
+    let mut size = 0u32;
+    // SAFETY: size query first, then a buffer of that size.
+    unsafe {
+        if RegGetValueW(root, key.as_ptr(), name.as_ptr(), RRF_RT_REG_SZ, ptr::null_mut(), ptr::null_mut(), &mut size)
+            != ERROR_SUCCESS
+        {
+            return None;
+        }
+        let mut buf = vec![0u16; (size as usize).div_ceil(2)];
+        if RegGetValueW(root, key.as_ptr(), name.as_ptr(), RRF_RT_REG_SZ, ptr::null_mut(), buf.as_mut_ptr().cast(), &mut size)
+            != ERROR_SUCCESS
+        {
+            return None;
+        }
+        let len = buf.iter().position(|c| *c == 0).unwrap_or(buf.len());
+        Some(String::from_utf16_lossy(&buf[..len]))
+    }
+}
+
+/// For example "Windows 11 25H2 (build 26200)".
+pub fn windows_version() -> String {
+    const KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion";
+    let build = reg_string(HKEY_LOCAL_MACHINE, KEY, "CurrentBuild").unwrap_or_default();
+    let release = reg_string(HKEY_LOCAL_MACHINE, KEY, "DisplayVersion").unwrap_or_default();
+    // Windows 11 still reports itself as Windows 10 in ProductName; the build tells them apart.
+    let major = if build.parse::<u32>().is_ok_and(|b| b >= 22000) { 11 } else { 10 };
+    format!("Windows {major} {release} (build {build})")
 }
 
 pub fn message_box(text: &str, error: bool) {
@@ -113,6 +148,14 @@ unsafe extern "system" fn session_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, 
         WM_APP_OPEN => {
             crate::ui::post(crate::ui::Command::OpenWindow);
             0
+        }
+        WM_POWERBROADCAST => {
+            match wparam as u32 {
+                PBT_APMSUSPEND => crate::log!("system going to sleep"),
+                PBT_APMRESUMEAUTOMATIC => crate::log!("system woke up"),
+                _ => {}
+            }
+            1
         }
         // Sent by `taskkill` without /F: shut down cleanly.
         WM_CLOSE => {
