@@ -215,7 +215,7 @@ cargo build --release
 Wootlight працює й на Mac з Apple Silicon і macOS 14.4 або новішою; портував його
 [Jason Bryner](https://github.com/jrbryner).
 
-Релізи після 1.2.0 містять `Wootlight-<версія>-macos-arm64.zip`, зібраний на GitHub Actions.
+Релізи, починаючи з 1.3.0, містять `Wootlight-<версія>-macos-arm64.zip`, зібраний на GitHub Actions.
 Розпакуйте його, перенесіть `Wootlight.app` у *Програми* й відкрийте. Програма не нотаризована
 Apple, тож перший запуск macOS заблокує: відкрийте *Системні параметри → Приватність і безпека* й
 натисніть *Усе одно відкрити* (*Open Anyway*) біля Wootlight або один раз виконайте в Терміналі

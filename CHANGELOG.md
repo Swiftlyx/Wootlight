@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 — 2026-11-03
 
 - Wootlight runs on Macs with Apple Silicon and macOS 14.4 or later, in the menu bar, ported by
   Jason Bryner: Core Audio capture of the device or of the playing app alone, *Now Playing* for

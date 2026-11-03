@@ -217,7 +217,7 @@ One test creates and deletes a Task Scheduler task named *Wootlight.Test*.
 Wootlight also runs on Macs with Apple Silicon and macOS 14.4 or later;
 [Jason Bryner](https://github.com/jrbryner) ported it.
 
-Releases after 1.2.0 include `Wootlight-<version>-macos-arm64.zip`, built on GitHub Actions. Unzip
+Releases from 1.3.0 on include `Wootlight-<version>-macos-arm64.zip`, built on GitHub Actions. Unzip
 it, move `Wootlight.app` to *Applications* and open it. The app is not notarized by Apple, so macOS
 blocks the first start: open *System Settings → Privacy & Security* and choose *Open Anyway* next to
 Wootlight, or run `xattr -dr com.apple.quarantine /Applications/Wootlight.app` once in Terminal.
