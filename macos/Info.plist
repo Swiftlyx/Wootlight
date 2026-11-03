@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template for Wootlight.app: scripts/bundle-macos.sh fills in @VERSION@. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Wootlight</string>
+	<key>CFBundleExecutable</key>
+	<string>Wootlight</string>
+	<key>CFBundleIconFile</key>
+	<string>Wootlight</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.swiftlyx.wootlight</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Wootlight</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@VERSION@</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.4</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright (c) 2026 Swiftlyx. MIT License.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Wootlight listens to the sound your Mac plays to draw it as an equalizer on your Wooting keyboard. Audio is analyzed live and never recorded or sent anywhere.</string>
+</dict>
+</plist>
