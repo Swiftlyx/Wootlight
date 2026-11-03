@@ -2,16 +2,15 @@
 
 ## Unreleased
 
-- A new *Effects* page with ten animations for the time no music plays: rain, a thunderstorm, the
-  Matrix, snow, a starry sky, an aurora, ripples, fire, a clock and a snake. *When idle*, an effect
+- A new *Effects* page with nine animations for the time no music plays: rain, a thunderstorm, the
+  Matrix, snow, a starry sky, an aurora, ripples, fire and a snake. *When idle*, an effect
   starts after 30 seconds to an hour without keyboard or mouse input and stops at the next input or
   when the keyboard's *Dim After* from Wootility passes; *Always* shows it whenever no music plays.
   Colors: the effect's own, the visualizer's, or your own solid color or gradient. While the page
   is open, the effect runs all the time, to show it.
-- No effect runs the same way twice: showers, wind, lightning, the Matrix's tempo, flurries,
-  shooting stars, the aurora and the ripples all change as they go. Snow piles up to half the
-  keyboard and melts back a row. The clock shows the hour on the function row and the minutes on
-  the number keys, steadily, with the seconds filling the function row.
+- No effect runs the same way twice: showers, wind, the rain's pace, lightning, the speed of every
+  Matrix stream, flurries, shooting stars of every length and brightness, the aurora and the
+  ripples all change as they go. Snow piles up to half the keyboard and melts back a row.
 - The snake plays a new game every time: it heads for the food without walling itself in, with a
   taste for detours of its own, starts slow, speeds up and slips more as it goes faster.
   *Play with the arrow keys* lets you steer it without stopping the effect.

@@ -120,7 +120,6 @@ pub enum T {
     EffectAurora,
     EffectRipples,
     EffectFire,
-    EffectClock,
     EffectSnake,
     SectionUpdates,
     Updates,
@@ -151,7 +150,6 @@ pub fn effect_label(effect: Option<Effect>) -> T {
         Some(Effect::Aurora) => T::EffectAurora,
         Some(Effect::Ripples) => T::EffectRipples,
         Some(Effect::Fire) => T::EffectFire,
-        Some(Effect::Clock) => T::EffectClock,
         Some(Effect::Snake) => T::EffectSnake,
     }
 }
@@ -279,7 +277,6 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
             EffectAurora => "Aurora",
             EffectRipples => "Ripples",
             EffectFire => "Fire",
-            EffectClock => "Clock",
             EffectSnake => "Snake",
             SectionUpdates => "Updates",
             Updates => "Get updates",
@@ -402,7 +399,6 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
             EffectAurora => "Полярне сяйво",
             EffectRipples => "Краплі на воді",
             EffectFire => "Вогонь",
-            EffectClock => "Годинник",
             EffectSnake => "Змійка",
             SectionUpdates => "Оновлення",
             Updates => "Отримувати оновлення",

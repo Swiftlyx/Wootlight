@@ -62,9 +62,9 @@ bar, thanks to [Jason Bryner](https://github.com/jrbryner): see [macOS](#macos).
   browser. Voice chat in Discord, games and system sounds stay off the keyboard.
 - **Your lighting when silent.** After a few seconds of silence the keyboard shows its own profile
   until sound comes back. When Wootlight quits, the profile comes back too.
-- **Effects while it is quiet.** Ten animations for the time no music plays: rain, a
-  thunderstorm, the Matrix, snow, a starry sky, an aurora, ripples, fire, a clock and a snake that
-  plays itself or that you steer with the arrow keys. None of them runs the same way twice. They
+- **Effects while it is quiet.** Nine animations for the time no music plays: rain, a
+  thunderstorm, the Matrix, snow, a starry sky, an aurora, ripples, fire and a snake that plays
+  itself or that you steer with the arrow keys. None of them runs the same way twice. They
   start after a while without keyboard or mouse input and stop when you are back or when the
   keyboard would dim, or they run whenever no music plays. In their own colors, the visualizer's,
   or yours.
@@ -171,7 +171,7 @@ language.
 | `media_only` | `false` | Listen only to the player that shows playback in the Windows media controls. |
 | `release_when_silent` | `true` | Show the keyboard's own lighting while nothing plays. |
 | `release_after_sec` | `3.0` | Seconds of silence before that (0.5 – 600). |
-| `effect` | `"off"` | Animation while no music plays: `"rain"`, `"storm"`, `"matrix"`, `"snow"`, `"stars"`, `"aurora"`, `"ripples"`, `"fire"`, `"clock"`, `"snake"` or `"off"`. |
+| `effect` | `"off"` | Animation while no music plays: `"rain"`, `"storm"`, `"matrix"`, `"snow"`, `"stars"`, `"aurora"`, `"ripples"`, `"fire"`, `"snake"` or `"off"`. |
 | `effect_when` | `"idle"` | `"idle"`: after `effect_after_sec` without keyboard or mouse input; `"always"`: whenever no music plays. |
 | `effect_after_sec` | `60.0` | Seconds without input before the effect starts (10 – 3600). |
 | `effect_color` | `"natural"` | `"natural"`, `"scheme"` (the visualizer's color) or `"custom"`. |
@@ -231,15 +231,11 @@ keyboard when it connects. *Always* shows the effect instead of your profile whe
 plays, and the keyboard does not dim meanwhile.
 
 Every run of an effect draws its own parameters, and slow drifts change them as it goes: showers
-come and go, each with its own wind; storms strike near or far; the Matrix speeds up and slows down
-a little; snow falls in flurries, piles up to half the keyboard's height and melts back a row; the
-shooting stars fly level, slant a row or two, or fall straight down; the aurora and the ripples
+come and go, each with its own wind, and the rain slows down a little now and then; storms strike
+near or far; every stream of the Matrix speeds up and slows down on its own; snow falls in flurries,
+piles up to half the keyboard's height and melts back a row; the shooting stars, short or long,
+faint or bright, fly level, slant a row or two, or fall straight down; the aurora and the ripples
 take new shapes and rhythms.
-
-The clock is steady: F1-F12 show the hour, the number keys the minutes (the tens in the effect's
-color, the ones in its accent), and the seconds fill the function row from left to right. Without a
-function row (60HE) the hour goes on 1-0, - and =, and the minutes on Q-P. On a board without
-number keys (UwU) the clock shows the starry sky.
 
 The snake plays itself: it heads for the food by a short path, takes only moves after which it can
 still reach its tail, and strays from the shortest way by a taste for detours drawn for every game.

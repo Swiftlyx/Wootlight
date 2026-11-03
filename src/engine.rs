@@ -926,7 +926,6 @@ fn run_analysis(shared: &Shared) {
                     palette = Some((seen_version, e, Palette::for_settings(&settings, e)));
                 }
                 let colors = palette.as_ref().map(|(_, _, colors)| colors).expect("set above");
-                let clock = if e == Effect::Clock { win::local_clock() } else { (0, 0, 0) };
                 // The arrow keys are read only while they steer the snake.
                 if settings.snake_play && e == Effect::Snake {
                     let held = win::arrow_keys();
@@ -940,7 +939,7 @@ fn run_analysis(shared: &Shared) {
                     }
                     arrows = held;
                 }
-                p.effects.render(e, colors, settings.brightness, dt, clock, &mut frame);
+                p.effects.render(e, colors, settings.brightness, dt, &mut frame);
             }
             // The next time an effect shows, it starts afresh.
             None => p.effects.restart(),

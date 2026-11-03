@@ -25,7 +25,7 @@ use windows::{
             DirectWrite::{
                 DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
                 DWRITE_FONT_WEIGHT, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
+                DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER,
                 DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS, DWRITE_TRIMMING,
                 DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
                 DWriteCreateFactory, IDWriteFactory, IDWriteFontCollection, IDWriteTextFormat,
@@ -418,6 +418,8 @@ impl Canvas {
                 Align::Trailing => DWRITE_TEXT_ALIGNMENT_TRAILING,
             });
             let _ = format.SetWordWrapping(if wrap { DWRITE_WORD_WRAPPING_WRAP } else { DWRITE_WORD_WRAPPING_NO_WRAP });
+            // Wrapped text starts at the top of its box, which is a little higher than the text.
+            let _ = format.SetParagraphAlignment(if wrap { DWRITE_PARAGRAPH_ALIGNMENT_NEAR } else { DWRITE_PARAGRAPH_ALIGNMENT_CENTER });
         }
         format
     }
@@ -429,8 +431,15 @@ impl Canvas {
 
     /// Wrapping text, top-aligned within the rectangle's height.
     pub fn text_wrapped(&self, text: &str, rect: Rect, style: TextStyle, color: Color) {
+        self.draw_text(text, self.wrapped_box(text, rect, style), style, color, Align::Leading, true);
+    }
+
+    /// The box wrapped text is laid out in: as wide as `rect` and one DIP higher than the text. A
+    /// box exactly as high can come out a hair lower after float rounding at some positions, and
+    /// DirectWrite then trims its last line.
+    fn wrapped_box(&self, text: &str, rect: Rect, style: TextStyle) -> Rect {
         let height = self.measure_height(text, style, rect.w());
-        self.draw_text(text, Rect::new(rect.l, rect.t, rect.r, rect.t + height), style, color, Align::Leading, true);
+        Rect::new(rect.l, rect.t, rect.r, rect.t + height + 1.0)
     }
 
     fn draw_text(&self, text: &str, rect: Rect, style: TextStyle, color: Color, align: Align, wrap: bool) {
@@ -543,5 +552,35 @@ impl Canvas {
     pub fn pop_clip(&self) {
         // SAFETY: matched with push_clip().
         unsafe { self.t().PopAxisAlignedClip() };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use windows::Win32::Graphics::DirectWrite::DWRITE_LINE_METRICS;
+
+    use super::*;
+
+    /// Wrapped text keeps every line wherever it sits, as it moves while a page scrolls.
+    #[test]
+    fn wrapped_text_is_never_trimmed() {
+        let c = Canvas::new().unwrap();
+        let text = "The arrows steer the snake and do not stop the effect; other keys and the mouse still do. Leave it for a few seconds and it plays on its own again.";
+        let style = TextStyle::BodySmall;
+        let shift = c.shifts[style as usize];
+        for i in 0..4000 {
+            let t = 250.0 + i as f32 * 0.0731;
+            let b = c.wrapped_box(text, Rect::new(28.0, t, 432.0, t + 200.0), style);
+            // SAFETY: a temporary layout of the box DrawText gets.
+            let trimmed = unsafe {
+                let format = c.format(style, Align::Leading, true);
+                let layout = c.dwrite.CreateTextLayout(&wide(text), format, b.w(), (b.b - shift) - (b.t - shift)).unwrap();
+                let mut lines = vec![DWRITE_LINE_METRICS::default(); 8];
+                let mut count = 0;
+                let _ = layout.GetLineMetrics(Some(&mut lines), &mut count);
+                lines[..count as usize].iter().any(|line| line.isTrimmed.as_bool())
+            };
+            assert!(!trimmed, "trimmed at y = {t}");
+        }
     }
 }

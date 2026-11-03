@@ -1,8 +1,8 @@
 //! Animations for the keyboard while no music plays: rain, a thunderstorm, the Matrix, snow, a
-//! starry sky, an aurora, ripples, fire, a clock and a snake that plays itself.
+//! starry sky, an aurora, ripples, fire and a snake that plays itself.
 //!
 //! Most effects run on a field of 1u cells (board rows by board width), and each key shows the
-//! brightest cell it covers. The starry sky, the clock and the snake work on the keys themselves.
+//! brightest cell it covers. The starry sky and the snake work on the keys themselves.
 //! Every run draws its own random parameters, and slow drifts change them as it goes. An effect yields a heat (0..1) per key, plus an accent (0..1) for highlights such as
 //! lightning or the snake's food; the palette turns both into a color.
 
@@ -19,8 +19,6 @@ use crate::{
 
 /// Seconds for an effect to fade in when it starts.
 const FADE_IN: f32 = 0.8;
-/// Grid row of the number keys; 1-9 sit in columns 1-9 and 0 in column 10.
-const NUMBER_ROW: usize = 1;
 
 const BLACK: [f32; 3] = [0.0; 3];
 const WHITE: [f32; 3] = [255.0; 3];
@@ -35,12 +33,11 @@ pub enum Effect {
     Aurora,
     Ripples,
     Fire,
-    Clock,
     Snake,
 }
 
 impl Effect {
-    pub const ALL: [Effect; 10] = [
+    pub const ALL: [Effect; 9] = [
         Effect::Rain,
         Effect::Storm,
         Effect::Matrix,
@@ -49,7 +46,6 @@ impl Effect {
         Effect::Aurora,
         Effect::Ripples,
         Effect::Fire,
-        Effect::Clock,
         Effect::Snake,
     ];
 
@@ -63,7 +59,6 @@ impl Effect {
             Effect::Aurora => "aurora",
             Effect::Ripples => "ripples",
             Effect::Fire => "fire",
-            Effect::Clock => "clock",
             Effect::Snake => "snake",
         }
     }
@@ -126,7 +121,6 @@ impl Palette {
                 ],
                 WHITE,
             ),
-            Effect::Clock => (&[(0.0, BLACK), (0.25, [45.0, 25.0, 0.0]), (0.6, [255.0, 140.0, 20.0]), (1.0, [255.0, 235.0, 190.0])], WHITE),
             Effect::Snake => (&[(0.0, BLACK), (0.3, [0.0, 50.0, 0.0]), (0.75, [30.0, 210.0, 40.0]), (1.0, [190.0, 255.0, 110.0])], [255.0, 30.0, 30.0]),
         };
         Palette::Stops { stops: stops.to_vec(), accent }
@@ -219,8 +213,6 @@ struct BoardKey {
     offset: usize,
     /// Row from the board's top row.
     row: usize,
-    grid_row: usize,
-    grid_col: usize,
     x0: f32,
     x1: f32,
     /// Field cells the key covers.
@@ -256,7 +248,7 @@ impl Board {
                 if cells.is_empty() {
                     cells.push(row * cols + (((k.x0 + k.x1) / 2.0) as usize).min(cols - 1));
                 }
-                BoardKey { offset: (k.row * SDK_COLS + k.col) * 3, row, grid_row: k.row, grid_col: k.col, x0: k.x0, x1: k.x1, cells }
+                BoardKey { offset: (k.row * SDK_COLS + k.col) * 3, row, x0: k.x0, x1: k.x1, cells }
             })
             .collect();
         Self { keys, rows, cols, width: layout.width.max(1.0) }
@@ -308,8 +300,6 @@ struct Scene<'a> {
     /// Per key.
     heat: &'a mut [f32],
     accent: &'a mut [f32],
-    /// Local hour, minute and second.
-    clock: (u32, u32, u32),
 }
 
 impl Scene<'_> {
@@ -389,7 +379,7 @@ impl Effects {
         }
     }
 
-    pub fn render(&mut self, effect: Effect, palette: &Palette, brightness: f32, dt: f32, clock: (u32, u32, u32), frame: &mut Frame) {
+    pub fn render(&mut self, effect: Effect, palette: &Palette, brightness: f32, dt: f32, frame: &mut Frame) {
         let Self { board, rng, current, field, field_accent, heat, accent, fade, hue } = self;
         if current.as_ref().map(|(e, _)| *e) != Some(effect) {
             *current = Some((effect, make(effect, board, rng)));
@@ -404,7 +394,7 @@ impl Effects {
         heat.fill(0.0);
         accent.fill(0.0);
         if let Some((_, animation)) = current.as_mut() {
-            let mut scene = Scene { board, rng, field, field_accent, heat, accent, clock };
+            let mut scene = Scene { board, rng, field, field_accent, heat, accent };
             animation.step(&mut scene, dt);
         }
 
@@ -435,11 +425,6 @@ fn make(effect: Effect, board: &Board, rng: &mut Rng) -> Box<dyn Animation> {
         Effect::Aurora => Box::new(Aurora::new(rng)),
         Effect::Ripples => Box::new(Ripples::new(rng)),
         Effect::Fire => Box::new(Fire::new(board, rng)),
-        // A board without number keys (UwU) shows the starry sky instead.
-        Effect::Clock => match Clock::new(board) {
-            Some(clock) => Box::new(clock),
-            None => Box::new(Stars::new(rng)),
-        },
         Effect::Snake => Box::new(Snake::new(board, rng)),
     }
 }
@@ -496,6 +481,8 @@ struct Rain {
     /// This shower's sideways drift in cells per row of fall, and the gusts around it.
     wind: f32,
     gust: Drift,
+    /// Share of the drops' full speed: the rain slows down now and then.
+    pace: Drift,
     lightning: Option<Lightning>,
 }
 
@@ -512,6 +499,7 @@ impl Rain {
             shower: Drift::new(0.35, 1.3, 6.0, rng),
             wind,
             gust: Drift::new(-0.08, 0.08, 3.0, rng),
+            pace: Drift::new(0.85, 1.0, 5.0, rng),
             lightning: storm.then(|| Lightning::new(rng)),
         }
     }
@@ -524,6 +512,7 @@ impl Animation for Rain {
         // Drops per column per second.
         let rate = if storm { 0.75 } else { 0.4 } * self.shower.step(dt, s.rng);
         let wind = self.wind + self.gust.step(dt, s.rng);
+        let pace = self.pace.step(dt, s.rng);
         self.spawn += rate * cols * dt;
         while self.spawn >= 1.0 {
             self.spawn -= 1.0;
@@ -535,8 +524,8 @@ impl Animation for Rain {
         }
         let mut landed = Vec::new();
         self.drops.retain_mut(|d| {
-            d.y += d.speed * dt;
-            d.x += wind * d.speed * dt;
+            d.y += d.speed * pace * dt;
+            d.x += wind * d.speed * pace * dt;
             if d.y < rows + 0.3 {
                 return true;
             }
@@ -635,28 +624,29 @@ struct Stream {
     speed: f32,
     tail: f32,
     wait: f32,
+    /// Share of `speed`, drifting on its own for every stream.
+    pace: Drift,
 }
 
-/// Code streams falling at their own speed, one per column, over flickering glyphs; the whole rain
-/// of code speeds up and slows down a little over time.
+/// Code streams falling at their own speed, one per column, over flickering glyphs; every stream
+/// speeds up and slows down a little on its own.
 struct Matrix {
     streams: Vec<Stream>,
     flicker: Vec<f32>,
     flicker_in: f32,
-    tempo: Drift,
 }
 
 impl Matrix {
     fn new(board: &Board, rng: &mut Rng) -> Self {
         let streams = (0..board.cols)
             .map(|_| {
-                let mut stream = Stream { y: 0.0, speed: 0.0, tail: 0.0, wait: 0.0 };
+                let mut stream = Stream { y: 0.0, speed: 0.0, tail: 0.0, wait: 0.0, pace: Drift::new(0.8, 1.2, 3.0, rng) };
                 Self::reset(&mut stream, board.rows, rng);
                 stream.y = -rng.range(0.0, board.rows as f32 * 1.5);
                 stream
             })
             .collect();
-        Self { streams, flicker: vec![1.0; board.rows * board.cols], flicker_in: 0.0, tempo: Drift::new(0.85, 1.15, 4.0, rng) }
+        Self { streams, flicker: vec![1.0; board.rows * board.cols], flicker_in: 0.0 }
     }
 
     fn reset(stream: &mut Stream, rows: usize, rng: &mut Rng) {
@@ -670,7 +660,6 @@ impl Matrix {
 impl Animation for Matrix {
     fn step(&mut self, s: &mut Scene, dt: f32) {
         let (rows, cols) = (s.board.rows, s.board.cols);
-        let tempo = self.tempo.step(dt, s.rng);
         self.flicker_in -= dt;
         if self.flicker_in <= 0.0 {
             self.flicker_in = 0.07;
@@ -685,7 +674,7 @@ impl Animation for Matrix {
                 stream.wait -= dt;
                 continue;
             }
-            stream.y += stream.speed * tempo * dt;
+            stream.y += stream.speed * stream.pace.step(dt, s.rng) * dt;
             if stream.y - stream.tail > rows as f32 {
                 Self::reset(stream, rows, s.rng);
                 continue;
@@ -823,17 +812,19 @@ struct Twinkle {
     peak: f32,
 }
 
-/// Position in cells and rows, velocity in cells and rows per second, and tail length.
+/// Position in cells and rows, velocity in cells and rows per second, tail length and brightness.
 struct ShootingStar {
     x: f32,
     y: f32,
     vx: f32,
     vy: f32,
     tail: f32,
+    glow: f32,
 }
 
 /// A dim night sky where single keys light up and fade, more of them at some times than others,
-/// and now and then a shooting star: level, slanting down or up a row or two, or straight down.
+/// and now and then a shooting star, short or long, faint or bright: level, slanting down or up a
+/// row or two, or straight down.
 struct Stars {
     twinkles: Vec<Twinkle>,
     spawn: f32,
@@ -852,9 +843,11 @@ impl Stars {
 
     fn launch(rows: f32, cols: f32, rng: &mut Rng) -> ShootingStar {
         let kind = rng.unit();
+        let glow = rng.range(0.55, 1.0);
         if kind < 0.2 {
             // Straight down from the top, drifting a little sideways.
-            return ShootingStar { x: rng.range(0.5, cols - 0.5), y: -1.0, vx: rng.range(-0.8, 0.8), vy: rng.range(6.0, 9.0), tail: 2.5 };
+            let tail = rng.range(1.5, 3.5);
+            return ShootingStar { x: rng.range(0.5, cols - 0.5), y: -1.0, vx: rng.range(-0.8, 0.8), vy: rng.range(6.0, 9.0), tail, glow };
         }
         let speed = rng.range(10.0, 16.0) * either_way(rng);
         let flight = (cols + 8.0) / speed.abs();
@@ -862,7 +855,8 @@ impl Stars {
         let shift = if kind < 0.6 { 0.0 } else { rng.range(1.0, 2.0) * if rng.chance(0.75) { 1.0 } else { -1.0 } };
         let (top, bottom) = if shift >= 0.0 { (0.5, (rows - 0.5 - shift).max(0.5)) } else { ((0.5 - shift).min(rows - 0.5), rows - 0.5) };
         let y = if shift == 0.0 { rng.range(0.5, (rows * 0.6).max(0.6)) } else { rng.range(top, bottom.max(top)) };
-        ShootingStar { x: if speed > 0.0 { -4.0 } else { cols + 4.0 }, y, vx: speed, vy: shift / flight, tail: 3.5 }
+        let tail = rng.range(2.0, 5.5);
+        ShootingStar { x: if speed > 0.0 { -(tail + 1.0) } else { cols + tail + 1.0 }, y, vx: speed, vy: shift / flight, tail, glow }
     }
 }
 
@@ -930,7 +924,7 @@ impl Animation for Stars {
                     } else {
                         0.0
                     };
-                    s.lift(row, col, v * (1.0 - off / 0.7));
+                    s.lift(row, col, v * (1.0 - off / 0.7) * star.glow);
                 }
             }
         }
@@ -1106,65 +1100,6 @@ impl Animation for Fire {
                 s.lift(row, col, v * 0.95);
             }
         }
-    }
-}
-
-/// The time, steady: the hour on F1-F12, the minutes on the number keys (tens in the effect's
-/// color, ones in its accent), and the seconds filling the hour row from left to right. A board
-/// without a function row shows the hour on 1-0, - and =, and the minutes on Q-P.
-struct Clock {
-    /// Keys of the hours 1-12.
-    hours: [usize; 12],
-    /// Keys of the minute digits 0-9.
-    digits: [usize; 10],
-    t: f32,
-    second: u32,
-    /// Seconds since `second` began, for a smooth fill.
-    since: f32,
-}
-
-impl Clock {
-    fn new(board: &Board) -> Option<Self> {
-        let at = |row: usize, col: usize| board.keys.iter().position(|k| k.grid_row == row && k.grid_col == col);
-        // The function row: every key of grid row 0 but Esc, from the left.
-        let mut f_keys: Vec<usize> = (0..board.keys.len()).filter(|&k| board.keys[k].grid_row == 0 && board.keys[k].grid_col != 0).collect();
-        f_keys.sort_by(|a, b| board.keys[*a].x0.total_cmp(&board.keys[*b].x0));
-        let (hours, digit_row): (Vec<usize>, usize) = if f_keys.len() >= 12 {
-            (f_keys[..12].to_vec(), NUMBER_ROW)
-        } else {
-            ((1..=12).map(|col| at(NUMBER_ROW, col)).collect::<Option<_>>()?, NUMBER_ROW + 1)
-        };
-        let mut digits = [0; 10];
-        for (digit, key) in digits.iter_mut().enumerate() {
-            *key = at(digit_row, if digit == 0 { 10 } else { digit })?;
-        }
-        Some(Self { hours: hours.try_into().ok()?, digits, t: 0.0, second: u32::MAX, since: 0.0 })
-    }
-}
-
-impl Animation for Clock {
-    fn step(&mut self, s: &mut Scene, dt: f32) {
-        self.t += dt;
-        let (hour, minute, second) = s.clock;
-        if second == self.second {
-            self.since = (self.since + dt).min(1.0);
-        } else {
-            self.second = second;
-            self.since = 0.0;
-        }
-        for &k in self.hours.iter().chain(&self.digits) {
-            s.heat[k] = 0.06;
-        }
-        let filled = (second as f32 + self.since) / 60.0 * self.hours.len() as f32;
-        for (i, &k) in self.hours.iter().enumerate() {
-            s.heat[k] = s.heat[k].max((filled - i as f32).clamp(0.0, 1.0) * 0.25);
-        }
-        // 1-12 o'clock on keys 0-11; midnight and noon on the twelfth.
-        s.heat[self.hours[((hour + 11) % 12) as usize]] = 1.0;
-        let (tens, ones) = (self.digits[(minute / 10 % 10) as usize], self.digits[(minute % 10) as usize]);
-        s.heat[tens] = 1.0;
-        // One key for both digits breathes between their two colors.
-        s.accent[ones] = if ones == tens { 0.85 * (0.5 + 0.5 * (self.t * 2.0).sin()) } else { 0.85 };
     }
 }
 
@@ -1472,7 +1407,7 @@ mod tests {
         let palette = Palette::natural(effect);
         let mut t = 0.0;
         while t < seconds {
-            effects.render(effect, &palette, 1.0, 1.0 / 60.0, (12, 34, 56), &mut frame);
+            effects.render(effect, &palette, 1.0, 1.0 / 60.0, &mut frame);
             t += 1.0 / 60.0;
         }
         frame
@@ -1505,35 +1440,11 @@ mod tests {
         let mut effects = Effects::new(&layout);
         let mut frame = [0; FRAME_LEN];
         let palette = Palette::natural(Effect::Aurora);
-        effects.render(Effect::Aurora, &palette, 1.0, 0.0, (0, 0, 0), &mut frame);
+        effects.render(Effect::Aurora, &palette, 1.0, 0.0, &mut frame);
         assert!(frame.iter().all(|v| *v == 0), "nothing shows before time passes");
         let faded = *run(&mut effects, Effect::Aurora, 0.2).iter().max().unwrap();
         let full = *run(&mut effects, Effect::Aurora, 3.0).iter().max().unwrap();
         assert!(faded < full, "{faded} < {full}");
-    }
-
-    /// The keys the clock lights at 9:47:30: (grid row, grid column) of full heat and of the accent.
-    fn clock_keys(layout: &Layout) -> (Vec<(usize, usize)>, Vec<(usize, usize)>) {
-        let board = Board::new(layout);
-        let mut clock = Clock::new(&board).expect("a board with number keys");
-        let n = board.keys.len();
-        let (mut field, mut field_accent) = (vec![0.0; board.rows * board.cols], vec![0.0; board.rows * board.cols]);
-        let (mut heat, mut accent) = (vec![0.0; n], vec![0.0; n]);
-        let mut rng = Rng::new(1);
-        let mut scene = Scene { board: &board, rng: &mut rng, field: &mut field, field_accent: &mut field_accent, heat: &mut heat, accent: &mut accent, clock: (9, 47, 30) };
-        clock.step(&mut scene, 0.0);
-        let cell = |k: usize| (board.keys[k].grid_row, board.keys[k].grid_col);
-        ((0..n).filter(|&k| heat[k] >= 1.0).map(cell).collect(), (0..n).filter(|&k| accent[k] > 0.5).map(cell).collect())
-    }
-
-    #[test]
-    fn clock_shows_hours_on_f_keys_and_minutes_on_digits() {
-        // F9 is grid column 10 on the 80HE; 4 and 7 are columns 4 and 7 of the number row.
-        assert_eq!(clock_keys(&Layout::wooting_80he(false)), (vec![(0, 10), (NUMBER_ROW, 4)], vec![(NUMBER_ROW, 7)]));
-        assert_eq!(clock_keys(&Layout::wooting_two(false)), (vec![(0, 10), (NUMBER_ROW, 4)], vec![(NUMBER_ROW, 7)]));
-        // Without a function row: 9 o'clock on the 9 key, the minutes on R and U.
-        assert_eq!(clock_keys(&Layout::wooting_60(false)), (vec![(NUMBER_ROW, 9), (NUMBER_ROW + 1, 4)], vec![(NUMBER_ROW + 1, 7)]));
-        assert!(Clock::new(&Board::new(&Layout::wooting_uwu())).is_none());
     }
 
     #[test]
@@ -1547,7 +1458,7 @@ mod tests {
         let (mut heat, mut accent) = (vec![0.0; n], vec![0.0; n]);
         let (mut deepest, mut melted) = (0.0f32, false);
         for _ in 0..(60 * 600) {
-            let mut scene = Scene { board: &board, rng: &mut rng, field: &mut field, field_accent: &mut field_accent, heat: &mut heat, accent: &mut accent, clock: (0, 0, 0) };
+            let mut scene = Scene { board: &board, rng: &mut rng, field: &mut field, field_accent: &mut field_accent, heat: &mut heat, accent: &mut accent };
             let before: f32 = snow.depth.iter().sum();
             snow.step(&mut scene, 1.0 / 60.0);
             melted |= snow.depth.iter().sum::<f32>() < before - 0.9;
@@ -1682,7 +1593,7 @@ mod preview {
             let mut t = 0.0;
             for shot in 0..shots {
                 while t < every * (shot + 1) as f32 {
-                    effects.render(effect, &palette, 1.0, 1.0 / 60.0, (21, 47, 30), &mut frame);
+                    effects.render(effect, &palette, 1.0, 1.0 / 60.0, &mut frame);
                     t += 1.0 / 60.0;
                 }
                 for key in &layout.keys {
