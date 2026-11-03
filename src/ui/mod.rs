@@ -53,6 +53,11 @@ pub enum Command {
     OpenConfig,
     RevealConfig,
     OpenLog,
+    BackUpSettings,
+    RestoreSettings,
+    CheckUpdates,
+    /// Installs the new version, or gets it first.
+    InstallUpdate,
     Quit,
 }
 
@@ -93,6 +98,20 @@ pub fn seed_for(settings: &Settings) -> [f32; 3] {
         ColorMode::Gradient(_, top) => top,
         ColorMode::Solid(rgb) => rgb,
         ColorMode::Rainbow | ColorMode::Flow => NEUTRAL_SEED,
+    }
+}
+
+/// The action that gets `version`: install and restart on Windows, open its page on macOS.
+/// `restart` spells out the restart, for the window's wider button.
+pub fn update_label(lang: i18n::Lang, version: &str, restart: bool) -> String {
+    let uk = lang == i18n::Lang::Uk;
+    match (cfg!(windows), restart, uk) {
+        (true, true, false) => format!("Update to {version} and restart"),
+        (true, true, true) => format!("Оновити до {version} і перезапустити"),
+        (true, false, false) => format!("Update to {version}"),
+        (true, false, true) => format!("Оновити до {version}"),
+        (false, _, false) => format!("Download {version}"),
+        (false, _, true) => format!("Завантажити {version}"),
     }
 }
 
@@ -141,4 +160,6 @@ pub mod glyph {
     pub const ADD: char = '\u{E710}';
     pub const DELETE: char = '\u{E74D}';
     pub const SPARKLE: char = '\u{F4A5}';
+    pub const SAVE: char = '\u{E74E}';
+    pub const HISTORY: char = '\u{E81C}';
 }

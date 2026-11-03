@@ -39,8 +39,10 @@ one in the *Used* column.
 | [crossbeam-utils](https://github.com/crossbeam-rs/crossbeam) | 0.8.23 | MIT OR Apache-2.0 | MIT | Copyright (c) 2019 The Crossbeam Project Developers |
 | [dasp_sample](https://github.com/rustaudio/sample) | 0.11.0 | MIT OR Apache-2.0 | MIT | Copyright (c) Mitchell Nordine and the RustAudio contributors |
 | [dpi](https://github.com/rust-windowing/winit) | 0.1.2 | Apache-2.0 AND MIT | Apache-2.0 and MIT | Copyright (c) The winit contributors |
+| [itoa](https://github.com/dtolnay/itoa) | 1.0.18 | MIT OR Apache-2.0 | MIT | Copyright (c) David Tolnay |
 | [keyboard-types](https://github.com/rust-windowing/keyboard-types) | 0.8.3 | MIT OR Apache-2.0 | MIT | Copyright (c) 2017 Pyfisch |
 | [libloading](https://github.com/nagisa/rust_libloading) | 0.9.0 | ISC | ISC | Copyright © 2015, Simonas Kazlauskas |
+| [memchr](https://github.com/BurntSushi/memchr) | 2.8.3 | Unlicense OR MIT | MIT | Copyright (c) 2015 Andrew Gallant |
 | [muda](https://github.com/tauri-apps/muda) | 0.21.2 | Apache-2.0 OR MIT | MIT | Copyright (c) 2022-2022 Tauri Programme within The Commons Conservancy |
 | [num-complex](https://github.com/rust-num/num-complex) | 0.4.6 | MIT OR Apache-2.0 | MIT | Copyright (c) 2014 The Rust Project Developers |
 | [num-integer](https://github.com/rust-num/num-integer) | 0.1.47 | MIT OR Apache-2.0 | MIT | Copyright (c) 2014 The Rust Project Developers |
@@ -51,6 +53,7 @@ one in the *Used* column.
 | [rustfft](https://github.com/ejmahler/RustFFT) | 6.4.1 | MIT OR Apache-2.0 | MIT | Copyright (c) 2015 The RustFFT Developers |
 | [serde](https://github.com/serde-rs/serde) | 1.0.229 | MIT OR Apache-2.0 | MIT | Copyright (c) Erick Tryzelaar and David Tolnay |
 | [serde_core](https://github.com/serde-rs/serde) | 1.0.229 | MIT OR Apache-2.0 | MIT | Copyright (c) Erick Tryzelaar and David Tolnay |
+| [serde_json](https://github.com/serde-rs/json) | 1.0.154 | MIT OR Apache-2.0 | MIT | Copyright (c) Erick Tryzelaar and David Tolnay |
 | [serde_spanned](https://github.com/toml-rs/toml) | 1.1.2 | MIT OR Apache-2.0 | MIT | Copyright (c) Individual contributors |
 | [strength_reduce](http://github.com/ejmahler/strength_reduce) | 0.2.4 | MIT OR Apache-2.0 | MIT | Copyright (c) 2015 The RustFFT Developers |
 | [thiserror](https://github.com/dtolnay/thiserror) | 2.0.21 | MIT OR Apache-2.0 | MIT | Copyright (c) David Tolnay |
@@ -71,6 +74,7 @@ one in the *Used* column.
 | [windows-sys](https://github.com/microsoft/windows-rs) | 0.61.2 | MIT OR Apache-2.0 | MIT | Copyright (c) Microsoft Corporation |
 | [windows-threading](https://github.com/microsoft/windows-rs) | 0.2.1 | MIT OR Apache-2.0 | MIT | Copyright (c) Microsoft Corporation |
 | [winnow](https://github.com/winnow-rs/winnow) | 1.0.4 | MIT | MIT | Copyright (c) The winnow contributors |
+| [zmij](https://github.com/dtolnay/zmij) | 1.0.23 | MIT | MIT | Copyright (c) David Tolnay |
 
 The keyboard LED positions were checked against the Wooting matrix maps of
 [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB); no OpenRGB code is included.

@@ -18,7 +18,7 @@ use crate::{
         menu::MenuEntry,
         window,
     },
-    win,
+    update, win,
 };
 
 const TOOLTIP_MAX_CHARS: usize = 120;
@@ -30,6 +30,44 @@ fn modified(path: &PathBuf) -> Option<SystemTime> {
 /// Output devices, listed off the UI thread: cpal initializes COM per thread.
 fn devices() -> Vec<String> {
     thread::spawn(audio::output_device_names).join().unwrap_or_default()
+}
+
+/// Saves the current settings where the user chooses. The dialog runs on its own thread.
+fn back_up(settings: Settings, lang: Lang) {
+    let spawned = thread::Builder::new().name("backup".into()).spawn(move || {
+        let (year, month, day) = win::local_date();
+        let name = format!("Wootlight settings {year:04}-{month:02}-{day:02}.toml");
+        let Some(target) = win::choose_save_path(tr(lang, T::BackUp), tr(lang, T::SettingsFiles), &name) else { return };
+        // Written from the settings in use, so the backup holds every key with its comment.
+        match settings.save(&target) {
+            Ok(()) => log!("settings backed up to {}", target.display()),
+            Err(e) => {
+                log!("backing up the settings to {} failed: {e}", target.display());
+                win::message_box(&format!("{}: {e}", tr(lang, T::BackUpFailed)), true);
+            }
+        }
+    });
+    if let Err(e) = spawned {
+        log!("backup failed to start: {e}");
+    }
+}
+
+/// Replaces the settings file with a backup the user picks; the file watcher then applies it.
+fn restore(config_path: PathBuf, lang: Lang) {
+    let spawned = thread::Builder::new().name("restore".into()).spawn(move || {
+        let Some(source) = win::choose_open_path(tr(lang, T::Restore), tr(lang, T::SettingsFiles)) else { return };
+        let restored = Settings::load_backup(&source).and_then(|s| s.save(&config_path).map_err(|e| e.to_string()));
+        match restored {
+            Ok(()) => log!("settings restored from {}", source.display()),
+            Err(e) => {
+                log!("restoring the settings from {} failed: {e}", source.display());
+                win::message_box(&format!("{}: {e}", tr(lang, T::RestoreFailed)), true);
+            }
+        }
+    });
+    if let Err(e) = spawned {
+        log!("restore failed to start: {e}");
+    }
 }
 
 pub struct App {
@@ -107,13 +145,17 @@ impl App {
         autostart_item.checked = autostart::is_enabled();
         let mut quit = MenuEntry::item(tr(lang, T::Quit), glyph::CLOSE, Command::Quit);
         quit.danger = true;
-        vec![
-            MenuEntry::item(tr(lang, T::OpenApp), glyph::OPEN_WINDOW, Command::OpenWindow),
+        let mut entries = vec![MenuEntry::item(tr(lang, T::OpenApp), glyph::OPEN_WINDOW, Command::OpenWindow)];
+        if let update::State::Available { version, .. } | update::State::Ready { version, .. } = update::state() {
+            entries.push(MenuEntry::item(&ui::update_label(lang, &version, false), glyph::SYNC, Command::InstallUpdate));
+        }
+        entries.extend([
             visualizer,
             autostart_item,
             MenuEntry::divider(),
             quit,
-        ]
+        ]);
+        entries
     }
 
     pub fn refresh(&mut self) {
@@ -190,6 +232,15 @@ impl App {
             }
             Command::RevealConfig => win::reveal_file(&self.config_path),
             Command::OpenLog => win::open_file(&logging::path()),
+            Command::BackUpSettings => back_up(self.shared.settings(), self.lang()),
+            Command::RestoreSettings => restore(self.config_path.clone(), self.lang()),
+            Command::CheckUpdates => update::check_now(),
+            Command::InstallUpdate => {
+                if update::install(window::is_visible()) {
+                    return false;
+                }
+                window::refresh(self.config_error.clone());
+            }
             Command::Quit => return false,
         }
         true
@@ -197,6 +248,11 @@ impl App {
 
     pub fn on_timer(&mut self) {
         self.watchdog.check(&self.shared);
+        // Music playing or the window open is not a moment to restart.
+        let quiet = !window::is_visible() && self.shared.preview().owner != Owner::Live;
+        if update::on_tick(&self.shared.settings().updates, quiet) {
+            ui::post(Command::Quit);
+        }
         let mtime = modified(&self.config_path);
         if mtime != self.config_mtime {
             self.config_mtime = mtime;

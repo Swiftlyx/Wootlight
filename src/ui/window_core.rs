@@ -16,6 +16,7 @@ use super::{
     palette::Palette,
     palette_for, post, seed_for,
     spring::Animator,
+    update_label,
     wants_dark,
     widgets::*,
 };
@@ -29,6 +30,7 @@ use crate::{
     render::{hsv_to_rgb, rgb_to_hs},
     sdk::KeyboardInfo,
     settings::{ColorMode, MAX_SAVED_COLORS, Settings, parse_color_mode},
+    update,
 };
 
 pub(super) const KEY_GAP: f32 = 2.0;
@@ -68,12 +70,17 @@ pub(super) const ID_CONFIG: u64 = 281;
 pub(super) const ID_REVEAL: u64 = 282;
 pub(super) const ID_QUIT: u64 = 283;
 pub(super) const ID_LOG: u64 = 284;
+pub(super) const ID_BACKUP: u64 = 285;
+pub(super) const ID_RESTORE: u64 = 286;
 pub(super) const ID_EFFECT: u64 = 290;
 pub(super) const ID_EFFECT_WHEN: u64 = 292;
+pub(super) const ID_SNAKE_PLAY: u64 = 296;
 pub(super) const ID_EFFECT_AFTER: u64 = 300;
 pub(super) const ID_EFFECT_COLORS: u64 = 310;
 pub(super) const ID_EFFECT_FILL: u64 = 320;
 pub(super) const ID_EFFECT_COLOR_EDIT: u64 = 330;
+pub(super) const ID_UPDATES: u64 = 340;
+pub(super) const ID_UPDATE_ACTION: u64 = 345;
 pub(super) const ID_MENU_ITEM: u64 = 1000;
 
 // Spring properties.
@@ -116,6 +123,8 @@ pub(super) const LANGUAGES: [(&str, &str); 2] = [("en", "English"), ("uk", "Ук
 pub(super) const AXIS_TICKS: [f32; 9] = [50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0];
 /// Idle times an effect can wait for, in seconds.
 pub(super) const EFFECT_WAITS: [f32; 4] = [30.0, 60.0, 120.0, 300.0];
+/// Values of `updates`, in the order of the buttons.
+pub(super) const UPDATE_MODES: [(&str, T); 3] = [("auto", T::UpdatesAuto), ("notify", T::UpdatesNotify), ("off", T::UpdatesOff)];
 /// Values of `effect_color`, in the order of the buttons.
 pub(super) const EFFECT_COLOR_MODES: [(&str, T); 3] = [("natural", T::EffectNatural), ("scheme", T::EffectScheme), ("custom", T::EffectCustom)];
 
@@ -138,6 +147,7 @@ pub(super) enum Flag {
     Enabled,
     Equalize,
     Release,
+    SnakePlay,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -189,6 +199,8 @@ pub(super) enum Action {
     OpenConfig,
     RevealConfig,
     OpenLog,
+    BackUp,
+    Restore,
     Quit,
     /// Shows the effect always (true) or only when idle.
     EffectWhen(bool),
@@ -197,6 +209,9 @@ pub(super) enum Action {
     EffectColors(&'static str),
     /// Gradient (true) or solid effect color.
     EffectFill(bool),
+    Updates(&'static str),
+    CheckUpdates,
+    InstallUpdate,
 }
 
 pub(super) struct Hit {
@@ -319,6 +334,7 @@ pub(super) struct Shown {
     dark: bool,
     autostart: bool,
     config_error: Option<String>,
+    update: update::State,
 }
 
 /// What the host does with its native window after an input.
@@ -443,6 +459,7 @@ impl WindowCore {
             dark: wants_dark(&settings),
             autostart: autostart::is_enabled(),
             config_error,
+            update: update::state(),
         };
         if self.shown.as_ref() != Some(&shown) {
             self.autostart = shown.autostart;
@@ -669,6 +686,7 @@ impl WindowCore {
                 Flag::Enabled => post(Command::ToggleEnabled),
                 Flag::Equalize => self.update_settings(|s| s.equalize = if s.equalize > 0.0 { 0.0 } else { 1.0 }),
                 Flag::Release => self.update_settings(|s| s.release_when_silent = !s.release_when_silent),
+                Flag::SnakePlay => self.update_settings(|s| s.snake_play = !s.snake_play),
             },
             Action::Color(index) => {
                 self.picked = Some(index);
@@ -750,10 +768,20 @@ impl WindowCore {
             Action::OpenConfig => post(Command::OpenConfig),
             Action::RevealConfig => post(Command::RevealConfig),
             Action::OpenLog => post(Command::OpenLog),
+            Action::BackUp => post(Command::BackUpSettings),
+            Action::Restore => post(Command::RestoreSettings),
             Action::Quit => post(Command::Quit),
             Action::EffectWhen(always) => self.update_settings(|s| s.effect_when = if always { "always" } else { "idle" }.into()),
             Action::EffectAfter(secs) => self.update_settings(|s| s.effect_after_sec = secs),
             Action::EffectColors(code) => self.update_settings(|s| s.effect_color = code.into()),
+            Action::Updates(mode) => {
+                self.update_settings(|s| s.updates = mode.into());
+                if mode != "off" {
+                    post(Command::CheckUpdates);
+                }
+            }
+            Action::CheckUpdates => post(Command::CheckUpdates),
+            Action::InstallUpdate => post(Command::InstallUpdate),
             Action::EffectFill(gradient) => self.update_settings(|s| {
                 let custom = match (Custom::parse(&s.effect_custom_color), gradient) {
                     (Custom::Solid(c), true) => Custom::Gradient { bottom: c, top: [255.0; 3] },
@@ -936,6 +964,15 @@ impl WindowCore {
                 if effect.is_none() {
                     return vec![Group { title: Some(t(T::SectionEffect).into()), rows }];
                 }
+                if effect == Some(Effect::Snake) {
+                    rows.push(Row::Switch {
+                        id: ID_SNAKE_PLAY,
+                        label: t(T::SnakePlay).into(),
+                        hint: Some(t(T::SnakePlayHint).into()),
+                        on: s.snake_play,
+                        action: Action::Toggle(Flag::SnakePlay),
+                    });
+                }
                 let always = s.effect_always();
                 rows.push(Row::Choice {
                     id: ID_EFFECT_WHEN,
@@ -1006,11 +1043,37 @@ impl WindowCore {
                         Row::Switch { id: ID_AUTOSTART, label: t(T::StartWithWindows).into(), hint: None, on: self.autostart, action: Action::Autostart },
                     ],
                 });
+                let state = update::state();
+                let action_row = match &state {
+                    update::State::Available { version, .. } | update::State::Ready { version, .. } => {
+                        Row::Button { id: ID_UPDATE_ACTION, glyph: glyph::SYNC, label: update_label(lang, version, true), action: Some(Action::InstallUpdate), danger: false }
+                    }
+                    busy => {
+                        let idle = !matches!(busy, update::State::Checking | update::State::Downloading { .. });
+                        Row::Button { id: ID_UPDATE_ACTION, glyph: glyph::SYNC, label: t(T::UpdateCheck).into(), action: idle.then_some(Action::CheckUpdates), danger: false }
+                    }
+                };
+                groups.push(Group {
+                    title: Some(t(T::SectionUpdates).into()),
+                    rows: vec![
+                        Row::Choice {
+                            id: ID_UPDATES,
+                            label: t(T::Updates).into(),
+                            hint: Some(update_hint(lang, &s.updates, &state)),
+                            options: UPDATE_MODES.iter().map(|(_, k)| t(*k).to_string()).collect(),
+                            selected: UPDATE_MODES.iter().position(|(code, _)| *code == s.updates),
+                            actions: UPDATE_MODES.iter().map(|(code, _)| Action::Updates(code)).collect(),
+                        },
+                        action_row,
+                    ],
+                });
                 groups.push(Group {
                     title: None,
                     rows: vec![
                         Row::Nav { id: ID_CONFIG, glyph: glyph::DOCUMENT, title: t(T::SettingsFile).into(), subtitle: t(T::SettingsFileHint).into(), action: Action::OpenConfig },
                         Row::Nav { id: ID_REVEAL, glyph: glyph::FOLDER, title: t(T::ShowInFolder).into(), subtitle: t(T::ShowInFolderHint).into(), action: Action::RevealConfig },
+                        Row::Nav { id: ID_BACKUP, glyph: glyph::SAVE, title: t(T::BackUp).into(), subtitle: t(T::BackUpHint).into(), action: Action::BackUp },
+                        Row::Nav { id: ID_RESTORE, glyph: glyph::HISTORY, title: t(T::Restore).into(), subtitle: t(T::RestoreHint).into(), action: Action::Restore },
                         Row::Nav { id: ID_LOG, glyph: glyph::BUG, title: t(T::Log).into(), subtitle: t(T::LogHint).into(), action: Action::OpenLog },
                         Row::Info { label: t(T::Version).into(), value: format!("{} · SDK 1.8.0", env!("CARGO_PKG_VERSION")) },
                     ],

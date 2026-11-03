@@ -171,6 +171,14 @@ pub fn windows_version() -> String {
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
     fn CGEventSourceSecondsSinceLastEventType(state: i32, event_type: u32) -> f64;
+    fn CGEventSourceKeyState(state: i32, key: u16) -> bool;
+}
+
+/// Which arrow keys are held now: left, right, up, down.
+pub fn arrow_keys() -> [bool; 4] {
+    // kCGEventSourceStateCombinedSessionState and the virtual key codes of the arrows.
+    // SAFETY: plain queries without pointers.
+    [123u16, 124, 126, 125].map(|key| unsafe { CGEventSourceKeyState(0, key) })
 }
 
 /// Time since the last keyboard, mouse or trackpad input in this login session.
@@ -179,6 +187,35 @@ pub fn idle_time() -> Option<Duration> {
     // SAFETY: a plain query without pointers.
     let secs = unsafe { CGEventSourceSecondsSinceLastEventType(0, u32::MAX) };
     (secs.is_finite() && secs >= 0.0).then(|| Duration::from_secs_f64(secs))
+}
+
+/// Local year, month and day.
+pub fn local_date() -> (u32, u32, u32) {
+    // SAFETY: localtime_r fills a local struct from the current time.
+    let t = unsafe {
+        let now = libc::time(std::ptr::null_mut());
+        let mut t: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&now, &mut t);
+        t
+    };
+    ((t.tm_year + 1900) as u32, (t.tm_mon + 1) as u32, t.tm_mday as u32)
+}
+
+/// Runs an AppleScript that yields a POSIX path; None when the user cancels.
+fn osascript_path(script: &str) -> Option<PathBuf> {
+    let output = Command::new("/usr/bin/osascript").args(["-e", script]).output().ok()?;
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (output.status.success() && !path.is_empty()).then(|| PathBuf::from(path))
+}
+
+/// Asks where to save a settings file, suggesting `name`. Blocks until the panel closes.
+pub fn choose_save_path(title: &str, _filter: &str, name: &str) -> Option<PathBuf> {
+    osascript_path(&format!("POSIX path of (choose file name with prompt {} default name {})", applescript_quote(title), applescript_quote(name)))
+}
+
+/// Asks for a settings file to open. Blocks until the panel closes.
+pub fn choose_open_path(title: &str, _filter: &str) -> Option<PathBuf> {
+    osascript_path(&format!("POSIX path of (choose file with prompt {})", applescript_quote(title)))
 }
 
 /// Local hour, minute and second.
@@ -191,6 +228,31 @@ pub fn local_clock() -> (u32, u32, u32) {
         t
     };
     (t.tm_hour as u32, t.tm_min as u32, t.tm_sec as u32)
+}
+
+/// GETs an https `url` through the system's curl, following redirects; returns the body when the
+/// request succeeds and the body is at most `limit` bytes.
+pub fn http_get(url: &str, accept: &str, limit: usize) -> Result<Vec<u8>, String> {
+    let agent = format!("Wootlight/{}", env!("CARGO_PKG_VERSION"));
+    let output = Command::new("/usr/bin/curl")
+        .args(["--fail", "--silent", "--show-error", "--location", "--proto", "=https", "--max-time", "120"])
+        .args(["--user-agent", &agent, "--header", &format!("Accept: {accept}"), url])
+        .output()
+        .map_err(|e| format!("curl: {e}"))?;
+    if !output.status.success() {
+        return Err(format!("curl: {}", String::from_utf8_lossy(&output.stderr).trim()));
+    }
+    if output.stdout.len() > limit {
+        return Err(format!("{url} is larger than {limit} bytes"));
+    }
+    Ok(output.stdout)
+}
+
+/// Opens a web page in the default browser.
+pub fn open_url(url: &str) {
+    if let Err(e) = Command::new("/usr/bin/open").arg(url).spawn() {
+        log!("opening {url} failed: {e}");
+    }
 }
 
 /// An alert with an OK button; on the main thread through AppKit, elsewhere through osascript.

@@ -18,7 +18,7 @@ use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninit
 use crate::{
     audio::{self, Capture},
     dsp::{BarDynamics, DynamicsConfig, Spectrum, WINDOW},
-    effects::{Effect, Effects, Palette},
+    effects::{Effect, Effects, Palette, Steer},
     layout::Layout,
     log,
     media::MediaSessions,
@@ -64,6 +64,8 @@ const MIN_RATE: f32 = 30.0;
 const MAX_RATE: f32 = 360.0;
 /// How often the time since the last keyboard or mouse input is read.
 const INPUT_POLL: Duration = Duration::from_millis(100);
+/// Input this close to an arrow press counts as that press.
+const ARROW_SLACK: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Status {
@@ -651,17 +653,18 @@ fn describe_behavior(s: &Settings) -> String {
 }
 
 /// Whether `s.effect` shows now: never over music; always as a preview or when set to always;
-/// otherwise once the keyboard and mouse have rested `effect_after_sec`, until the keyboard's
-/// Dim After passes (unless it is off or unknown).
-fn effect_shows(s: &Settings, music: bool, preview: bool, idle: Option<Duration>, dim_after: Option<Duration>) -> bool {
+/// otherwise once the keyboard and mouse have `rested` for `effect_after_sec`, until the keyboard's
+/// Dim After passes after the last input of any kind (`idle`). `rested` leaves out the arrow keys
+/// that steer the snake; otherwise the two are the same.
+fn effect_shows(s: &Settings, music: bool, preview: bool, rested: Option<Duration>, idle: Option<Duration>, dim_after: Option<Duration>) -> bool {
     if s.effect().is_none() || music {
         return false;
     }
     if preview || s.effect_always() {
         return true;
     }
-    let Some(idle) = idle else { return false };
-    idle >= Duration::from_secs_f32(s.effect_after_sec) && dim_after.is_none_or(|dim| dim.is_zero() || idle < dim)
+    let (Some(rested), Some(idle)) = (rested, idle) else { return false };
+    rested >= Duration::from_secs_f32(s.effect_after_sec) && dim_after.is_none_or(|dim| dim.is_zero() || idle < dim)
 }
 
 /// Why an effect started or stopped, for the log; `was_preview` tells whether the preview showed it.
@@ -733,6 +736,10 @@ fn run_analysis(shared: &Shared) {
     let mut silence = SilenceGate::default();
     let mut owned = false;
     let mut idle: Option<Duration> = None;
+    // The last input that was not an arrow steering the snake, and the last arrow press.
+    let mut rested_since: Option<Instant> = None;
+    let mut arrow_at: Option<Instant> = None;
+    let mut arrows = [false; 4];
     let mut dim_after: Option<Duration> = None;
     let mut next_input_poll = Instant::now();
     let mut showing: Option<Effect> = None;
@@ -865,17 +872,24 @@ fn run_analysis(shared: &Shared) {
             owned = owns;
         }
 
+        let playing = settings.snake_play && showing == Some(Effect::Snake);
         if now >= next_input_poll {
             next_input_poll = now + INPUT_POLL;
             idle = win::idle_time();
             dim_after = shared.status().dim_after;
+            let input_at = idle.and_then(|d| now.checked_sub(d));
+            let steering = playing && input_at.zip(arrow_at).is_some_and(|(input, arrow)| input <= arrow + ARROW_SLACK);
+            if !steering {
+                rested_since = input_at;
+            }
         }
+        let rested = rested_since.map(|t| now.saturating_duration_since(t));
         let preview = shared.effect_preview.load(Ordering::Relaxed) && shared.ui_hz.load(Ordering::Relaxed) > 0;
-        let effect = settings.effect().filter(|_| effect_shows(&settings, music, preview, idle, dim_after));
+        let effect = settings.effect().filter(|_| effect_shows(&settings, music, preview, rested, idle, dim_after));
         if effect != showing {
             match (showing, effect) {
-                (_, Some(e)) => log!("{}: showing {}", effect_reason(&settings, true, music, preview, previewed, idle, dim_after), e.code()),
-                (Some(e), None) => log!("{}: {} stopped", effect_reason(&settings, false, music, preview, previewed, idle, dim_after), e.code()),
+                (_, Some(e)) => log!("{}: showing {}", effect_reason(&settings, true, music, preview, previewed, rested, dim_after), e.code()),
+                (Some(e), None) => log!("{}: {} stopped", effect_reason(&settings, false, music, preview, previewed, rested, dim_after), e.code()),
                 (None, None) => {}
             }
             showing = effect;
@@ -913,6 +927,19 @@ fn run_analysis(shared: &Shared) {
                 }
                 let colors = palette.as_ref().map(|(_, _, colors)| colors).expect("set above");
                 let clock = if e == Effect::Clock { win::local_clock() } else { (0, 0, 0) };
+                // The arrow keys are read only while they steer the snake.
+                if settings.snake_play && e == Effect::Snake {
+                    let held = win::arrow_keys();
+                    for (direction, (down, was)) in Steer::ALL.into_iter().zip(held.into_iter().zip(arrows)) {
+                        if down && !was {
+                            p.effects.steer(direction);
+                        }
+                    }
+                    if held.contains(&true) {
+                        arrow_at = Some(now);
+                    }
+                    arrows = held;
+                }
                 p.effects.render(e, colors, settings.brightness, dt, clock, &mut frame);
             }
             // The next time an effect shows, it starts afresh.
@@ -1096,20 +1123,24 @@ mod tests {
         let s = Settings { effect: "rain".into(), effect_after_sec: 60.0, ..Settings::default() };
         let secs = |v: u64| Some(Duration::from_secs(v));
         let five_min = secs(300);
-        assert!(!effect_shows(&s, false, false, secs(30), five_min), "before the wait");
-        assert!(effect_shows(&s, false, false, secs(90), five_min));
-        assert!(!effect_shows(&s, false, false, secs(301), five_min), "the keyboard dims now");
-        assert!(effect_shows(&s, false, false, secs(3600), Some(Duration::ZERO)), "Dim After off");
-        assert!(effect_shows(&s, false, false, secs(3600), None), "Dim After unknown");
-        assert!(!effect_shows(&s, false, false, None, None), "no input time");
-        assert!(!effect_shows(&s, true, true, secs(90), None), "never over music");
-        assert!(effect_shows(&s, false, true, secs(0), five_min), "the effects page previews it");
+        let shows = |s: &Settings, music, preview, idle, dim| effect_shows(s, music, preview, idle, idle, dim);
+        assert!(!shows(&s, false, false, secs(30), five_min), "before the wait");
+        assert!(shows(&s, false, false, secs(90), five_min));
+        assert!(!shows(&s, false, false, secs(301), five_min), "the keyboard dims now");
+        assert!(shows(&s, false, false, secs(3600), Some(Duration::ZERO)), "Dim After off");
+        assert!(shows(&s, false, false, secs(3600), None), "Dim After unknown");
+        assert!(!shows(&s, false, false, None, None), "no input time");
+        assert!(!shows(&s, true, true, secs(90), None), "never over music");
+        assert!(shows(&s, false, true, secs(0), five_min), "the effects page previews it");
         let short_dim = Settings { effect_after_sec: 300.0, ..s.clone() };
-        assert!(!effect_shows(&short_dim, false, false, secs(400), five_min), "dims before it would start");
+        assert!(!shows(&short_dim, false, false, secs(400), five_min), "dims before it would start");
         let always = Settings { effect_when: "always".into(), ..s.clone() };
-        assert!(effect_shows(&always, false, false, secs(0), five_min));
+        assert!(shows(&always, false, false, secs(0), five_min));
+        // Steering the snake: arrows just pressed, the last other input long ago.
+        assert!(effect_shows(&s, false, false, secs(200), secs(0), five_min), "arrows keep the game going");
+        assert!(effect_shows(&s, false, false, secs(900), secs(1), five_min), "and keep the keyboard from dimming");
         let off = Settings { effect: "off".into(), ..s };
-        assert!(!effect_shows(&off, false, true, secs(3600), None));
+        assert!(!shows(&off, false, true, secs(3600), None));
     }
 
     fn feed(gate: &mut SilenceGate, start: Instant, from_ms: u64, to_ms: u64, level: f32) -> bool {

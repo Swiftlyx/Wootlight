@@ -8,7 +8,15 @@
   and stops at the next input or when the keyboard's *Dim After* from Wootility passes; *Always*
   shows it whenever no music plays. Colors: the effect's own, the visualizer's, or your own solid
   color or gradient. While the page is open, the keyboard previews the effect.
-- The log notes the keyboard's *Dim After* and why an effect started or stopped.
+- The snake plays a new game every time: it heads for the food without walling itself in, with a
+  taste for detours of its own. *Play with the arrow keys* lets you steer it without stopping the
+  effect.
+- Updates from GitHub. *Automatic* downloads a new version, checks it against `SHA256SUMS.txt` and
+  installs it while you are away or at the next start; *Notify* only shows it; *Off* never asks.
+  On macOS the update opens the release page.
+- *Settings → Back up settings* and *Restore settings* save all settings to a file and load them
+  back.
+- The log notes the keyboard's *Dim After*, why an effect started or stopped, and every update.
 
 ## 1.3.0 — 2026-11-03
 

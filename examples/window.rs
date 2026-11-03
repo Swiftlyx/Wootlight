@@ -58,6 +58,9 @@ mod tray;
 #[path = "../src/ui/mod.rs"]
 mod ui;
 #[cfg(target_os = "macos")]
+#[path = "../src/update.rs"]
+mod update;
+#[cfg(target_os = "macos")]
 #[path = "../src/mac/platform.rs"]
 mod win;
 

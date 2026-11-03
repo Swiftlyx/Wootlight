@@ -64,14 +64,17 @@ bar, thanks to [Jason Bryner](https://github.com/jrbryner): see [macOS](#macos).
   until sound comes back. When Wootlight quits, the profile comes back too.
 - **Effects while it is quiet.** Eleven animations for the time no music plays: rain, a
   thunderstorm, the Matrix, snow, a starry sky, an aurora, ripples, fire, the Game of Life, a clock
-  and a snake that plays itself. They start after a while without keyboard or mouse input and stop
-  when you are back or when the keyboard would dim, or they run whenever no music plays. In their
-  own colors, the visualizer's, or yours.
+  and a snake that plays itself, a new game every time, or that you steer with the arrow keys. They
+  start after a while without keyboard or mouse input and stop when you are back or when the
+  keyboard would dim, or they run whenever no music plays. In their own colors, the visualizer's,
+  or yours.
 - **A live view.** The window shows the keyboard exactly as it is lit, or a plain equalizer of the
   same bands with a frequency scale, so you can see how the two compare. It draws at your monitor's
   refresh rate.
 - **Small and quiet.** One executable, portable settings, *Start with Windows* without
   administrator rights. English and Ukrainian, light and dark themes.
+- **Up to date by itself.** Wootlight checks GitHub for new versions and installs them while you
+  are away. All settings back up to one file and restore from it.
 
 ## Supported keyboards
 
@@ -120,10 +123,21 @@ switch. Below it are four pages:
 - **Effects**: the animation for the time no music plays, *Show: When idle | Always*, how long to
   wait (*Start after*), and its colors: *Natural*, *Visualizer* (the colors of *Look*) or *Custom*.
   While this page is open, the keyboard shows the effect.
-- **Settings**: language, theme, *Start with Windows*, the settings file, *Show in folder*, the log.
+- **Settings**: language, theme, *Start with Windows*, updates, the settings file, *Show in folder*,
+  *Back up settings* and *Restore settings*, the log.
 
 The window works from the keyboard too: Tab and Shift+Tab move the focus, Enter or Space presses,
 ← and → move a slider, Esc closes a list or hides the window.
+
+*Back up settings* saves every setting (colors, saved presets, sound, effects) to a file you choose;
+*Restore settings* loads one back and checks first that it is a Wootlight settings file. *Start
+with Windows* is not part of the file.
+
+With *Get updates: Automatic*, Wootlight asks GitHub for the latest release half a minute after it
+starts and every 6 hours. A new `Wootlight.exe` is downloaded next to the running one, checked
+against the release's `SHA256SUMS.txt`, and swapped in while nobody uses the computer and no music
+plays, or at the next start; *Update to … and restart* does it at once. *Notify* only shows the new
+version, and *Off* never contacts GitHub. The check sends nothing but the request itself.
 
 *Start with Windows* creates a Task Scheduler task, *Wootlight*, that starts the app when you sign
 in. It needs no administrator rights, and moving `Wootlight.exe` to another folder updates the task
@@ -161,6 +175,8 @@ language.
 | `effect_after_sec` | `60.0` | Seconds without input before the effect starts (10 – 3600). |
 | `effect_color` | `"natural"` | `"natural"`, `"scheme"` (the visualizer's color) or `"custom"`. |
 | `effect_custom_color` | `"#1060ff>#ffffff"` | Your own effect color: one color, or base to highlight like `"#1060ff>#ffffff"`. |
+| `snake_play` | `false` | The arrow keys steer the snake and do not stop the effect. |
+| `updates` | `"auto"` | `"auto"`, `"notify"` or `"off"`. |
 
 The *Low*, *Medium* and *High* sensitivity presets are pairs of `range_db` and `headroom_db`.
 
@@ -172,6 +188,7 @@ Other files:
 | Log, kept across starts; past 1 MB it moves to `wootlight.old.log` | `%LOCALAPPDATA%\Wootlight\wootlight.log` |
 | Wooting RGB SDK, unpacked on start | `%LOCALAPPDATA%\Wootlight\wooting-rgb-sdk64.dll` |
 | Start with Windows | Task Scheduler, task *Wootlight* |
+| A downloaded update, until it is installed | `Wootlight.update-<version>.exe` next to `Wootlight.exe` |
 
 If the folder of the executable cannot be written to, such as Program Files, the settings go to
 `%APPDATA%\Wootlight\Wootlight.toml` instead.
@@ -213,6 +230,12 @@ keyboard when it connects. *Always* shows the effect instead of your profile whe
 plays, and the keyboard does not dim meanwhile. The clock spells the time on the number keys, hours
 then minutes, while the function row fills up with the seconds. On a board without number keys
 (UwU) it shows the starry sky.
+
+The snake plays itself: it heads for the food by a short path, takes only moves after which it can
+still reach its tail, and strays from the shortest way by a taste for detours drawn for every game.
+With *Play with the arrow keys* the arrows steer it, and they do not stop the effect: Wootlight
+then reads the state of the four arrow keys while the snake runs, nothing else. Left alone for a
+few seconds, the snake plays on its own again.
 
 ## Building from source
 
@@ -279,6 +302,8 @@ On the Mac, Wootlight works the same, with these differences:
   reaches it.
 - **Files.** Settings, the log and the unpacked SDK are in `~/Library/Application Support/Wootlight`,
   not next to the app, because the app bundle is signed.
+- **Updates.** Wootlight tells when a new version is out, and *Download* opens its page; it does not
+  replace the app by itself yet.
 
 ## Troubleshooting
 

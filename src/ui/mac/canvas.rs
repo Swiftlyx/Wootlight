@@ -64,6 +64,8 @@ pub fn symbol_name(glyph: char) -> Option<&'static str> {
         ADD => "plus",
         DELETE => "trash",
         SPARKLE => "sparkles",
+        SAVE => "square.and.arrow.down",
+        HISTORY => "clock.arrow.circlepath",
         _ => return None,
     })
 }
@@ -671,6 +673,8 @@ mod tests {
             glyph::ADD,
             glyph::DELETE,
             glyph::SPARKLE,
+            glyph::SAVE,
+            glyph::HISTORY,
         ];
         for (i, g) in glyphs.iter().enumerate() {
             let (cx, cy) = (20.0 + i as f32 * 23.0, 290.0);

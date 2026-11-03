@@ -45,6 +45,10 @@ pub struct Settings {
     pub effect_color: String,
     /// The user's own animation color: one hex color or "#base>#highlight".
     pub effect_custom_color: String,
+    /// The arrow keys steer the snake effect without stopping it.
+    pub snake_play: bool,
+    /// "auto" installs new releases from GitHub, "notify" only shows them, "off" never asks.
+    pub updates: String,
 }
 
 impl Default for Settings {
@@ -75,6 +79,8 @@ impl Default for Settings {
             effect_after_sec: 60.0,
             effect_color: "natural".into(),
             effect_custom_color: "#1060ff>#ffffff".into(),
+            snake_play: false,
+            updates: "auto".into(),
         }
     }
 }
@@ -225,6 +231,16 @@ const COMMENTS: &[(&str, &str, &str)] = &[
         "Кольори анімації: \"natural\" (природні), \"scheme\" (як у візуалізатора) або \"custom\" (свої).",
     ),
     (
+        "snake_play",
+        "While the snake effect runs, the arrow keys steer it and do not stop it; other keys and the mouse do.",
+        "Поки йде ефект «Змійка», стрілки керують нею і не зупиняють її; інші клавіші й миша зупиняють.",
+    ),
+    (
+        "updates",
+        "Updates from GitHub: \"auto\" downloads new versions and installs them while you are away or at\nthe next start, \"notify\" only shows them, \"off\" never contacts GitHub.",
+        "Оновлення з GitHub: \"auto\" завантажує нові версії й встановлює їх, коли вас немає, або під час\nнаступного запуску, \"notify\" лише показує їх, \"off\" ніколи не звертається до GitHub.",
+    ),
+    (
         "effect_custom_color",
         "Your own animation color for \"custom\": one hex color or \"#base>#highlight\".",
         "Ваш колір анімації для \"custom\": один hex-колір або \"#основний>#відблиск\".",
@@ -300,6 +316,10 @@ impl Settings {
         if !own(&self.effect_custom_color) {
             self.effect_custom_color = d.effect_custom_color;
         }
+        self.updates = match self.updates.trim().to_ascii_lowercase().as_str() {
+            u @ ("notify" | "off") => u.into(),
+            _ => "auto".into(),
+        };
         self
     }
 
@@ -312,6 +332,16 @@ impl Settings {
             }
             None => e.message().to_string(),
         })
+    }
+
+    /// Loads a backup, refusing a TOML file that is not Wootlight's settings.
+    pub fn load_backup(path: &Path) -> Result<Self, String> {
+        let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let table: toml::Table = toml::from_str(&text).map_err(|e| e.message().to_string())?;
+        if !["enabled", "color", "brightness"].iter().all(|key| table.contains_key(*key)) {
+            return Err("this is not a Wootlight settings file".into());
+        }
+        Self::load(path)
     }
 
     /// Rewrites the file when it lacks keys or comments of the current version.
@@ -368,6 +398,8 @@ impl Settings {
             ("effect_after_sec", format!("{:?}", self.effect_after_sec)),
             ("effect_color", quote(&self.effect_color)),
             ("effect_custom_color", quote(&self.effect_custom_color)),
+            ("snake_play", self.snake_play.to_string()),
+            ("updates", quote(&self.updates)),
         ];
         let mut out = comment("header");
         for (key, value) in &values {
@@ -401,6 +433,20 @@ mod tests {
             assert_eq!(parsed, s);
             assert_eq!(parsed.color_mode(), ColorMode::Gradient([200.0, 200.0, 200.0], [255.0, 42.0, 138.0]));
         }
+    }
+
+    #[test]
+    fn backups_must_be_wootlight_settings() {
+        let dir = std::env::temp_dir().join(format!("wootlight-backup-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let backup = dir.join("backup.toml");
+        let s = Settings { color: "#00ffaa".into(), effect: "snow".into(), ..Settings::default() };
+        s.save(&backup).unwrap();
+        assert_eq!(Settings::load_backup(&backup), Ok(s));
+        let other = dir.join("Cargo.toml");
+        fs::write(&other, "[package]\nname = \"x\"\n").unwrap();
+        assert!(Settings::load_backup(&other).is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

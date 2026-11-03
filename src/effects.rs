@@ -78,6 +78,20 @@ impl Effect {
     }
 }
 
+/// A direction the player steers the snake in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Steer {
+    Left = 0,
+    Right = 1,
+    Up = 2,
+    Down = 3,
+}
+
+impl Steer {
+    /// In the order of `Board::moves`.
+    pub const ALL: [Steer; 4] = [Steer::Left, Steer::Right, Steer::Up, Steer::Down];
+}
+
 /// Turns heat and accent into a color.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Palette {
@@ -272,16 +286,15 @@ impl Board {
             .collect()
     }
 
-    /// The snake's moves from each key: the touching keys left and right in its row, and the
-    /// nearest key straight above and below.
-    fn steps(&self) -> Vec<Vec<usize>> {
+    /// The snake's moves from each key, in the order of `Steer::ALL`: the touching keys left and
+    /// right in its row, and the nearest key straight above and below.
+    fn moves(&self) -> Vec<[Option<usize>; 4]> {
         const GAP: f32 = 0.6;
         (0..self.keys.len())
             .map(|i| {
                 let a = &self.keys[i];
                 let cx = self.cx(i);
                 let same_row = |j: &usize| *j != i && self.keys[*j].row == a.row;
-                let mut out: Vec<usize> = Vec::new();
                 let left = (0..self.keys.len()).filter(same_row).find(|&j| {
                     let b = &self.keys[j];
                     b.x1 <= a.x0 + 0.01 && a.x0 - b.x1 < GAP
@@ -290,17 +303,16 @@ impl Board {
                     let b = &self.keys[j];
                     b.x0 >= a.x1 - 0.01 && b.x0 - a.x1 < GAP
                 });
-                out.extend(left);
-                out.extend(right);
-                for row in [a.row.checked_sub(1), Some(a.row + 1)].into_iter().flatten() {
-                    let nearest = (0..self.keys.len())
+                let vertical = |row: Option<usize>| {
+                    let row = row?;
+                    (0..self.keys.len())
                         .filter(|&j| self.keys[j].row == row)
                         .map(|j| (j, (self.cx(j) - cx).abs()))
                         .filter(|&(j, d)| d <= ((self.keys[j].x1 - self.keys[j].x0) / 2.0).max(0.8))
-                        .min_by(|x, y| x.1.total_cmp(&y.1));
-                    out.extend(nearest.map(|(j, _)| j));
-                }
-                out
+                        .min_by(|x, y| x.1.total_cmp(&y.1))
+                        .map(|(j, _)| j)
+                };
+                [left, right, vertical(a.row.checked_sub(1)), vertical(Some(a.row + 1))]
             })
             .collect()
     }
@@ -348,6 +360,9 @@ impl Scene<'_> {
 
 trait Animation {
     fn step(&mut self, scene: &mut Scene, dt: f32);
+
+    /// An arrow key the player pressed; only the snake listens.
+    fn steer(&mut self, _direction: Steer) {}
 }
 
 /// Renders one effect at a time over a keyboard's keys.
@@ -385,6 +400,13 @@ impl Effects {
     /// The next `render` starts the effect afresh, fading in.
     pub fn restart(&mut self) {
         self.current = None;
+    }
+
+    /// Passes an arrow key press to the effect: the snake turns that way.
+    pub fn steer(&mut self, direction: Steer) {
+        if let Some((_, animation)) = self.current.as_mut() {
+            animation.steer(direction);
+        }
     }
 
     pub fn render(&mut self, effect: Effect, palette: &Palette, brightness: f32, dt: f32, clock: (u32, u32, u32), frame: &mut Frame) {
@@ -1072,9 +1094,13 @@ impl Animation for Clock {
     }
 }
 
-/// A snake that takes the shortest free path to its food, grows, and starts over when it traps
-/// itself or fills half the board.
+/// A snake that plays itself: it heads for the food by a short free path, takes only moves after
+/// which its tail stays reachable, so it does not wall itself in, and strays from the shortest way
+/// by a taste for detours drawn anew for every game. The player can take over with the arrow keys;
+/// left alone for `PLAYER_PATIENCE`, it plays on its own again. A new game starts when it crashes
+/// or fills half the board.
 struct Snake {
+    moves: Vec<[Option<usize>; 4]>,
     steps: Vec<Vec<usize>>,
     /// Head first.
     body: VecDeque<usize>,
@@ -1085,14 +1111,41 @@ struct Snake {
     t: f32,
     /// Seconds left of the flash before a new game.
     over: f32,
+    /// Noise the AI adds to path lengths, in steps: how far it strays from the shortest way.
+    wander: f32,
+    /// The direction of the last step.
+    heading: Option<Steer>,
+    /// The direction the player steers in and when they pressed it (in `t`).
+    steer: Option<(Steer, f32)>,
+    /// Steps since the snake last ate.
+    hungry: u32,
 }
 
 const SNAKE_STEP: f32 = 0.16;
 const SNAKE_OVER: f32 = 0.9;
+/// Seconds without an arrow press after which the snake plays on its own again.
+const PLAYER_PATIENCE: f32 = 6.0;
+/// Steps without food after which the AI takes risky moves to reach it.
+const HUNGER_LIMIT: u32 = 120;
 
 impl Snake {
     fn new(board: &Board, rng: &mut Rng) -> Self {
-        let mut snake = Self { steps: board.steps(), body: VecDeque::new(), grow: 0, food: None, timer: 0.0, t: 0.0, over: 0.0 };
+        let moves = board.moves();
+        let steps = moves.iter().map(|m| m.iter().flatten().copied().collect()).collect();
+        let mut snake = Self {
+            moves,
+            steps,
+            body: VecDeque::new(),
+            grow: 0,
+            food: None,
+            timer: 0.0,
+            t: 0.0,
+            over: 0.0,
+            wander: 0.0,
+            heading: None,
+            steer: None,
+            hungry: 0,
+        };
         snake.reset(rng);
         snake
     }
@@ -1102,12 +1155,19 @@ impl Snake {
         self.body.push_back(rng.below(self.steps.len()));
         self.grow = 2;
         self.over = 0.0;
+        self.wander = rng.range(0.0, 2.5);
+        self.heading = None;
+        self.steer = None;
+        self.hungry = 0;
         self.place_food(rng);
     }
 
+    /// Food goes on a free key with at least two ways in, so it is never a dead end.
     fn place_food(&mut self, rng: &mut Rng) {
         let free: Vec<usize> = (0..self.steps.len()).filter(|k| !self.body.contains(k)).collect();
-        self.food = (!free.is_empty()).then(|| free[rng.below(free.len())]);
+        let open: Vec<usize> = free.iter().copied().filter(|&k| self.steps[k].len() >= 2).collect();
+        let pick = if open.is_empty() { &free } else { &open };
+        self.food = (!pick.is_empty()).then(|| pick[rng.below(pick.len())]);
     }
 
     /// Whether the head cannot enter key `k`: the body, except the tail end that moves on.
@@ -1116,28 +1176,50 @@ impl Snake {
         self.body.iter().take(self.body.len() - moving_tail.min(self.body.len())).any(|&b| b == k)
     }
 
-    /// The first step of a shortest free path from the head to `goal`.
-    fn path_step(&self, goal: usize) -> Option<usize> {
-        let head = *self.body.front()?;
-        let mut from = vec![usize::MAX; self.steps.len()];
-        from[head] = head;
-        let mut queue = VecDeque::from([head]);
+    /// Steps from every key to `goal` over keys the head may enter; `usize::MAX` where it cannot get.
+    fn distances(&self, goal: usize) -> Vec<usize> {
+        let mut dist = vec![usize::MAX; self.steps.len()];
+        dist[goal] = 0;
+        let mut queue = VecDeque::from([goal]);
         while let Some(k) = queue.pop_front() {
-            if k == goal {
-                let mut step = k;
-                while from[step] != head {
-                    step = from[step];
-                }
-                return Some(step);
-            }
             for &n in &self.steps[k] {
-                if from[n] == usize::MAX && !self.blocked(n) {
-                    from[n] = k;
+                if dist[n] == usize::MAX && !self.blocked(n) {
+                    dist[n] = dist[k] + 1;
                     queue.push_back(n);
                 }
             }
         }
-        None
+        dist
+    }
+
+    /// Whether, after moving the head to `next`, a free path still leads from the head to the tail.
+    fn safe_after(&self, next: usize) -> bool {
+        let keeps_tail = self.grow > 0 || Some(next) == self.food;
+        let mut body: Vec<usize> = std::iter::once(next).chain(self.body.iter().copied()).collect();
+        if !keeps_tail {
+            body.pop();
+        }
+        let tail = *body.last().unwrap_or(&next);
+        if tail == next {
+            return true;
+        }
+        let mut closed = vec![false; self.steps.len()];
+        for &b in &body[..body.len() - 1] {
+            closed[b] = true;
+        }
+        let mut queue = VecDeque::from([next]);
+        while let Some(k) = queue.pop_front() {
+            for &n in &self.steps[k] {
+                if n == tail {
+                    return true;
+                }
+                if !closed[n] {
+                    closed[n] = true;
+                    queue.push_back(n);
+                }
+            }
+        }
+        false
     }
 
     /// Free keys reachable from `start`.
@@ -1158,28 +1240,64 @@ impl Snake {
         count
     }
 
-    /// The free neighbour of the head with the most room behind it.
-    fn roomiest_step(&self) -> Option<usize> {
+    /// The AI's next key: the free neighbour closest to the food, with this game's noise, and not
+    /// one that cuts the head off from the tail while a safe one exists, unless it has gone hungry.
+    fn choose(&self, rng: &mut Rng) -> Option<usize> {
+        let risk = if self.hungry < HUNGER_LIMIT { 1000.0 } else { 0.0 };
         let head = *self.body.front()?;
-        self.steps[head].iter().copied().filter(|&n| !self.blocked(n)).max_by_key(|&n| self.room(n))
+        let to_food = self.food.map(|food| self.distances(food));
+        let candidates: Vec<usize> = self.steps[head].iter().copied().filter(|&n| !self.blocked(n)).collect();
+        candidates
+            .into_iter()
+            .map(|n| {
+                let dist = to_food.as_ref().map_or(usize::MAX, |d| d[n]);
+                let mut score = if dist == usize::MAX { 60.0 } else { dist as f32 };
+                score += rng.range(0.0, self.wander);
+                if !self.safe_after(n) {
+                    score += risk;
+                }
+                // With the food out of reach, more room ahead wins.
+                score -= self.room(n) as f32 * 0.05;
+                (n, score)
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(n, _)| n)
+    }
+
+    /// The player's next key: the pressed direction, or straight on when it points back into the
+    /// neck. None for a wall or the body: the player loses this game.
+    fn player_move(&mut self, direction: Steer) -> Option<usize> {
+        let head = *self.body.front()?;
+        let neck = self.body.get(1).copied();
+        let pressed = self.moves[head][direction as usize];
+        let next = if pressed.is_some() && pressed == neck { self.heading.and_then(|h| self.moves[head][h as usize]) } else { pressed };
+        next.filter(|&n| !self.blocked(n))
     }
 
     fn advance(&mut self, rng: &mut Rng) {
-        let Some(food) = self.food else {
+        let player = self.steer.filter(|(_, at)| self.t - at < PLAYER_PATIENCE).map(|(direction, _)| direction);
+        if player.is_none() {
+            self.steer = None;
+        }
+        let head = self.body.front().copied();
+        let next = match player {
+            Some(direction) => self.player_move(direction),
+            None => self.choose(rng),
+        };
+        let Some(next) = next else {
             self.over = SNAKE_OVER;
             return;
         };
-        let Some(next) = self.path_step(food).or_else(|| self.roomiest_step()) else {
-            self.over = SNAKE_OVER;
-            return;
-        };
+        self.heading = head.and_then(|h| Steer::ALL.into_iter().find(|d| self.moves[h][*d as usize] == Some(next)));
+        let ate = Some(next) == self.food;
+        self.hungry = if ate { 0 } else { self.hungry + 1 };
         self.body.push_front(next);
         if self.grow > 0 {
             self.grow -= 1;
         } else {
             self.body.pop_back();
         }
-        if next == food {
+        if ate {
             self.grow += 1;
             if self.body.len() * 2 >= self.steps.len() {
                 self.over = SNAKE_OVER;
@@ -1213,6 +1331,12 @@ impl Animation for Snake {
         }
         if let Some(food) = self.food.filter(|_| self.over <= 0.0) {
             s.accent[food] = s.accent[food].max(0.55 + 0.45 * (self.t * 7.0).sin().abs());
+        }
+    }
+
+    fn steer(&mut self, direction: Steer) {
+        if self.over <= 0.0 {
+            self.steer = Some((direction, self.t));
         }
     }
 }
@@ -1321,8 +1445,50 @@ mod tests {
                     assert!(snake.steps[*pair.1].contains(pair.0), "the snake jumped");
                 }
             }
-            assert!(eaten > 20, "the snake finds its food ({eaten})");
+            assert!(eaten > 150, "the snake finds its food ({eaten})");
         }
+    }
+
+    #[test]
+    fn every_game_takes_its_own_way() {
+        let board = Board::new(&Layout::wooting_80he(false));
+        let path = |seed: u64| {
+            let mut rng = Rng::new(seed);
+            let mut snake = Snake::new(&board, &mut rng);
+            (0..300).map(|_| {
+                snake.advance(&mut rng);
+                snake.body.front().copied()
+            }).collect::<Vec<_>>()
+        };
+        assert_ne!(path(1), path(2));
+    }
+
+    #[test]
+    fn arrows_steer_the_snake_and_walls_end_the_game() {
+        let board = Board::new(&Layout::wooting_80he(false));
+        let mut rng = Rng::new(3);
+        let mut snake = Snake::new(&board, &mut rng);
+        // Somewhere in the middle of the board, with no key to its left on the far side.
+        let start = (0..board.keys.len()).find(|&k| snake.moves[k].iter().all(Option::is_some)).unwrap();
+        snake.body = VecDeque::from([start]);
+        snake.grow = 0;
+        snake.food = None;
+        snake.steer(Steer::Right);
+        snake.advance(&mut rng);
+        assert_eq!(snake.body.front().copied(), snake.moves[start][Steer::Right as usize]);
+        assert_eq!(snake.heading, Some(Steer::Right));
+        // Back into the neck is ignored: the snake goes on to the right.
+        let head = snake.body[0];
+        snake.body.push_back(start);
+        snake.steer(Steer::Left);
+        snake.advance(&mut rng);
+        assert_eq!(snake.body.front().copied(), snake.moves[head][Steer::Right as usize]);
+        // Leftwards from the left edge of a row there is only the wall.
+        let edge = (0..board.keys.len()).find(|&k| snake.moves[k][Steer::Left as usize].is_none()).unwrap();
+        snake.body = VecDeque::from([edge]);
+        snake.steer(Steer::Left);
+        snake.advance(&mut rng);
+        assert!(snake.over > 0.0, "the wall ends the game");
     }
 
     #[test]

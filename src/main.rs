@@ -24,6 +24,7 @@ mod shell;
 #[cfg_attr(target_os = "macos", path = "mac/tray.rs")]
 mod tray;
 mod ui;
+mod update;
 #[cfg_attr(target_os = "macos", path = "mac/platform.rs")]
 mod win;
 
@@ -50,6 +51,7 @@ pub fn stop_engine() {
 }
 
 fn main() {
+    let updated = update::wait_for_previous();
     let stats = std::env::args().any(|a| a == "--stats");
     let open_window = std::env::args().any(|a| a == "--open");
     // Reports the System Audio Recording permission without touching any audio device.
@@ -86,6 +88,10 @@ fn main() {
     if let Ok(exe) = std::env::current_exe() {
         log!("program: {}", exe.display());
     }
+    #[cfg(windows)]
+    update::clean_up(updated);
+    #[cfg(not(windows))]
+    let _ = updated;
 
     let config_path = paths::config_file();
     log!("settings: {}", config_path.display());
@@ -108,6 +114,11 @@ fn main() {
             (Settings::default(), Some(e))
         }
     };
+    // A version downloaded earlier takes over before anything starts.
+    #[cfg(windows)]
+    if update::install_at_start(&settings.updates, open_window) {
+        return;
+    }
     // Runs schtasks.exe; startup does not wait for it.
     let _ = thread::Builder::new().name("autostart".into()).spawn(autostart::refresh);
 
@@ -124,6 +135,7 @@ fn main() {
             return;
         }
     }
+    update::start(Arc::clone(&shared));
 
     if let Err(e) = tray::run(shared, config_path, config_error, devices, open_window) {
         log!("tray failed: {e}");

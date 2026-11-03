@@ -16,6 +16,7 @@ use super::{
 use crate::{
     effects::Effect,
     engine::{Owner, Preview, Status},
+    update,
     layout::Layout,
     render::{SDK_COLS, SDK_ROWS, color_at, hsv_to_rgb},
     settings::{ColorMode, Settings},
@@ -100,6 +101,33 @@ pub(super) fn effect_stop_hint(lang: Lang, after_sec: f32, dim_after: Option<Dur
         Some(_) => "Dim After is off in Wootility, so it runs until you use the keyboard or mouse.".into(),
         None if uk => "Ефект іде, доки ви не скористаєтеся клавіатурою чи мишею.".into(),
         None => "It runs until you use the keyboard or mouse.".into(),
+    }
+}
+
+/// What the updater is doing, under the update mode buttons.
+pub(super) fn update_hint(lang: Lang, mode: &str, state: &update::State) -> String {
+    use update::State;
+    let uk = lang == Lang::Uk;
+    let current = env!("CARGO_PKG_VERSION");
+    match state {
+        State::Checking if uk => "Перевіряю GitHub…".into(),
+        State::Checking => "Checking GitHub…".into(),
+        State::UpToDate { at: (h, m) } if uk => format!("У вас остання версія, {current}. Перевірено о {h:02}:{m:02}."),
+        State::UpToDate { at: (h, m) } => format!("You have the latest version, {current}. Checked at {h:02}:{m:02}."),
+        State::Downloading { version } if uk => format!("Завантажую Wootlight {version}…"),
+        State::Downloading { version } => format!("Downloading Wootlight {version}…"),
+        State::Ready { version, .. } if mode == "auto" && uk => {
+            format!("Wootlight {version} завантажено. Він встановиться, коли ви відійдете від комп'ютера, або під час наступного запуску.")
+        }
+        State::Ready { version, .. } if mode == "auto" => format!("Wootlight {version} is downloaded. It installs while you are away from the computer or at the next start."),
+        State::Available { version, .. } | State::Ready { version, .. } if uk => format!("Вийшов Wootlight {version}."),
+        State::Available { version, .. } | State::Ready { version, .. } => format!("Wootlight {version} is out."),
+        State::Failed(e) if uk => format!("Не вдалося перевірити оновлення: {e}"),
+        State::Failed(e) => format!("Could not check for updates: {e}"),
+        State::Idle if mode == "off" && uk => "Wootlight сам не звертається до GitHub.".into(),
+        State::Idle if mode == "off" => "Wootlight does not contact GitHub on its own.".into(),
+        State::Idle if uk => "Wootlight перевіряє нові версії на GitHub раз на кілька годин.".into(),
+        State::Idle => "Wootlight checks GitHub for new versions every few hours.".into(),
     }
 }
 
