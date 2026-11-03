@@ -101,6 +101,23 @@ pub fn parse_hex(text: &str) -> Option<[f32; 3]> {
     Some([channel(0)?, channel(2)?, channel(4)?])
 }
 
+/// macOS wording for the comments that name Windows features; looked up before `COMMENTS`.
+#[cfg(target_os = "macos")]
+const PLATFORM_COMMENTS: &[(&str, &str, &str)] = &[
+    (
+        "audio_device",
+        "Output device to show (part of its name). Empty follows the macOS default.",
+        "Пристрій виводу, звук якого показувати (частина назви). Порожньо — пристрій macOS за замовчуванням.",
+    ),
+    (
+        "media_only",
+        "Listen only to the player that shows playback in Now Playing (Apple Music, Spotify, YouTube...).\nVoice chat, games and system sounds are left out.",
+        "Слухати лише плеєр, що показує відтворення в «Зараз відтворюється» (Apple Music, Spotify, YouTube...).\nГолосовий чат, ігри та системні звуки не враховуються.",
+    ),
+];
+#[cfg(not(target_os = "macos"))]
+const PLATFORM_COMMENTS: &[(&str, &str, &str)] = &[];
+
 /// Comments for the settings file: key, English, Ukrainian. Lines are separated by '\n'.
 const COMMENTS: &[(&str, &str, &str)] = &[
     (
@@ -256,8 +273,9 @@ impl Settings {
     fn to_toml(&self) -> String {
         let uk = self.ukrainian();
         let comment = |key: &str| {
-            COMMENTS
+            PLATFORM_COMMENTS
                 .iter()
+                .chain(COMMENTS)
                 .find(|(k, _, _)| *k == key)
                 .map(|(_, en, ukr)| if uk { *ukr } else { *en })
                 .unwrap_or_default()
