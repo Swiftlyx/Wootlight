@@ -10,6 +10,7 @@ use objc2_foundation::{NSArray, NSString, NSUserDefaults};
 
 use super::{canvas::Canvas, palette::Color};
 pub use super::mark::{Mark, draw_mark};
+use super::mark::draw_mark_in;
 
 thread_local! {
     static CANVAS: RefCell<Option<Canvas>> = const { RefCell::new(None) };
@@ -61,8 +62,10 @@ pub fn apps_prefer_dark() -> bool {
     }
 }
 
-/// Renders the mark to straight-alpha RGBA pixels, one point per pixel.
-pub fn render_rgba(size: u32, mark: Mark, seed: [f32; 3], dark_background: bool) -> Vec<u8> {
+/// Renders the menu bar mark as a template image: white where the keycap is, with the bars cut
+/// out, so macOS tints it like the system's own icons. The color arguments are kept for the
+/// shared tray code and do not change the result.
+pub fn render_rgba(size: u32, mark: Mark, _seed: [f32; 3], _dark_background: bool) -> Vec<u8> {
     let n = size as usize;
     let mut out = vec![0u8; n * n * 4];
     CANVAS.with(|cell| {
@@ -81,18 +84,15 @@ pub fn render_rgba(size: u32, mark: Mark, seed: [f32; 3], dark_background: bool)
         canvas.attach(&ctx, size as f32);
         canvas.begin();
         canvas.clear(Color::TRANSPARENT);
-        draw_mark(canvas, 0.0, 0.0, size as f32, mark, seed, dark_background);
+        draw_mark_in(canvas, 0.0, 0.0, size as f32, mark, Color::rgb8(255, 255, 255), Color::rgb8(0, 0, 0));
         canvas.end();
         canvas.detach();
     });
     for px in out.chunks_exact_mut(4) {
-        // Premultiplied to straight alpha.
-        let a = px[3] as u32;
-        if a != 0 && a != 255 {
-            for v in &mut px[..3] {
-                *v = ((*v as u32 * 255 + a / 2) / a).min(255) as u8;
-            }
-        }
+        // Premultiplied white keeps its coverage in each channel and the black bars are gone,
+        // so red alone is the mask: white where it is drawn, transparent through the bars.
+        px[3] = px[0];
+        px[..3].fill(255);
     }
     out
 }
@@ -111,12 +111,14 @@ mod tests {
         let rgba = render_rgba(32, Mark::Live, [255.0, 42.0, 138.0], true);
         let opaque = rgba.chunks_exact(4).filter(|p| p[3] > 200).count();
         assert!(opaque > 300, "only {opaque} opaque pixels");
-        // The center column of the middle bar is the dark ink, the cap around it is light; rows
-        // count from the top as on Windows.
+        // Every pixel is white; only the alpha carries the mark.
+        assert!(rgba.chunks_exact(4).all(|p| p[..3] == [255, 255, 255]));
+        // The center column of the middle bar is cut out, the cap around it is solid; rows count
+        // from the top as on Windows.
         let px = |x: usize, y: usize| &rgba[(y * 32 + x) * 4..(y * 32 + x) * 4 + 4];
-        assert!(px(16, 20)[0] < 100, "{:?}", px(16, 20));
-        assert!(px(4, 16)[0] > 150, "{:?}", px(4, 16));
+        assert!(px(16, 20)[3] < 60, "{:?}", px(16, 20));
+        assert!(px(4, 16)[3] > 200, "{:?}", px(4, 16));
         // The bars stand on the bottom: above the tallest one the cap shows.
-        assert!(px(16, 4)[0] > 150, "{:?}", px(16, 4));
+        assert!(px(16, 4)[3] > 200, "{:?}", px(16, 4));
     }
 }

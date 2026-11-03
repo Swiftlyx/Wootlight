@@ -165,7 +165,7 @@ pub fn icon_size() -> u32 {
 /// Shows straight-alpha RGBA pixels `size` pixels square as the menu bar mark, 18 points tall.
 pub fn set_icon(tray: &TrayIcon, rgba: Vec<u8>, size: u32) {
     let Ok(icon) = Icon::from_rgba(rgba, size, size) else { return };
-    let _ = tray.set_icon(Some(icon));
+    let _ = tray.set_icon_templated(Some(icon));
     // tray-icon sizes the image by its pixels; show every pixel at the screen's scale instead.
     let Some(mtm) = MainThreadMarker::new() else { return };
     if let Some(image) = tray.ns_status_item().and_then(|item| item.button(mtm)).and_then(|b| b.image()) {
@@ -373,7 +373,7 @@ pub fn run(
         .with_menu_on_left_click(false)
         .with_menu_on_right_click(false)
         .with_tooltip("Wootlight")
-        .with_icon(first_icon)
+        .with_icon_templated(first_icon)
         .build()
         .map_err(|e| e.to_string())?;
     let status_item = tray.ns_status_item();

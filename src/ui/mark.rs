@@ -3,7 +3,7 @@
 
 use super::{
     canvas::{Canvas, Rect},
-    palette::{hue_chroma, seed_swatch, tone_color},
+    palette::{Color, hue_chroma, seed_swatch, tone_color},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,6 +18,11 @@ pub fn draw_mark(c: &Canvas, x: f32, y: f32, size: f32, mark: Mark, seed: [f32; 
     let (hue, chroma) = hue_chroma(seed);
     let cap = seed_swatch(seed, dark_background);
     let ink = tone_color(hue, chroma.min(0.05), if dark_background { 18.0 } else { 98.0 });
+    draw_mark_in(c, x, y, size, mark, cap, ink);
+}
+
+/// Draws the mark with the keycap in `cap` and the bars in `ink`.
+pub fn draw_mark_in(c: &Canvas, x: f32, y: f32, size: f32, mark: Mark, cap: Color, ink: Color) {
     let body = Rect::new(x + size * 0.06, y + size * 0.06, x + size * 0.94, y + size * 0.94);
     let radius = size * 0.26;
     if mark == Mark::Paused {
