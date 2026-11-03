@@ -692,6 +692,10 @@ pub(super) fn dropdown_items(drop: Drop, s: &Settings, devices: &[String], lang:
             [None].into_iter().chain(Effect::ALL.map(Some)).map(|e| tr(lang, effect_label(e)).to_string()).collect(),
             Some(s.effect().and_then(|e| Effect::ALL.iter().position(|a| *a == e)).map_or(0, |i| i + 1)),
         ),
+        Drop::EffectAfter => (
+            EFFECT_WAITS.iter().map(|w| fmt_wait(lang, *w)).collect(),
+            EFFECT_WAITS.iter().position(|w| (w - s.effect_after_sec).abs() < 0.5),
+        ),
     }
 }
 

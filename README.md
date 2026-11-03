@@ -62,9 +62,9 @@ bar, thanks to [Jason Bryner](https://github.com/jrbryner): see [macOS](#macos).
   browser. Voice chat in Discord, games and system sounds stay off the keyboard.
 - **Your lighting when silent.** After a few seconds of silence the keyboard shows its own profile
   until sound comes back. When Wootlight quits, the profile comes back too.
-- **Effects while it is quiet.** Eleven animations for the time no music plays: rain, a
-  thunderstorm, the Matrix, snow, a starry sky, an aurora, ripples, fire, the Game of Life, a clock
-  and a snake that plays itself, a new game every time, or that you steer with the arrow keys. They
+- **Effects while it is quiet.** Ten animations for the time no music plays: rain, a
+  thunderstorm, the Matrix, snow, a starry sky, an aurora, ripples, fire, a clock and a snake that
+  plays itself or that you steer with the arrow keys. None of them runs the same way twice. They
   start after a while without keyboard or mouse input and stop when you are back or when the
   keyboard would dim, or they run whenever no music plays. In their own colors, the visualizer's,
   or yours.
@@ -121,8 +121,9 @@ switch. Below it are four pages:
   30 Hz – 10 kHz, 40 Hz – 16 kHz or 20 Hz – 20 kHz), *Even out frequencies*, the audio source,
   *React to: Any sound | Media players*, and *Your lighting when silent*.
 - **Effects**: the animation for the time no music plays, *Show: When idle | Always*, how long to
-  wait (*Start after*), and its colors: *Natural*, *Visualizer* (the colors of *Look*) or *Custom*.
-  While this page is open, the keyboard shows the effect.
+  wait (*Start after*, 30 seconds to an hour), and its colors: *Natural*, *Visualizer* (the colors
+  of *Look*) or *Custom*. While this page is open, the effect runs all the time, whether you use the
+  keyboard or not, so you can see it.
 - **Settings**: language, theme, *Start with Windows*, updates, the settings file, *Show in folder*,
   *Back up settings* and *Restore settings*, the log.
 
@@ -170,7 +171,7 @@ language.
 | `media_only` | `false` | Listen only to the player that shows playback in the Windows media controls. |
 | `release_when_silent` | `true` | Show the keyboard's own lighting while nothing plays. |
 | `release_after_sec` | `3.0` | Seconds of silence before that (0.5 – 600). |
-| `effect` | `"off"` | Animation while no music plays: `"rain"`, `"storm"`, `"matrix"`, `"snow"`, `"stars"`, `"aurora"`, `"ripples"`, `"fire"`, `"life"`, `"clock"`, `"snake"` or `"off"`. |
+| `effect` | `"off"` | Animation while no music plays: `"rain"`, `"storm"`, `"matrix"`, `"snow"`, `"stars"`, `"aurora"`, `"ripples"`, `"fire"`, `"clock"`, `"snake"` or `"off"`. |
 | `effect_when` | `"idle"` | `"idle"`: after `effect_after_sec` without keyboard or mouse input; `"always"`: whenever no music plays. |
 | `effect_after_sec` | `60.0` | Seconds without input before the effect starts (10 – 3600). |
 | `effect_color` | `"natural"` | `"natural"`, `"scheme"` (the visualizer's color) or `"custom"`. |
@@ -227,12 +228,22 @@ have rested for *Start after*; Wootlight asks Windows only how long ago the last
 which keys were pressed. It stops at the next input, and when the keyboard's *Dim After* from
 Wootility passes, so the keyboard still dims as you set it up; Wootlight reads that time from the
 keyboard when it connects. *Always* shows the effect instead of your profile whenever no music
-plays, and the keyboard does not dim meanwhile. The clock spells the time on the number keys, hours
-then minutes, while the function row fills up with the seconds. On a board without number keys
-(UwU) it shows the starry sky.
+plays, and the keyboard does not dim meanwhile.
+
+Every run of an effect draws its own parameters, and slow drifts change them as it goes: showers
+come and go, each with its own wind; storms strike near or far; the Matrix speeds up and slows down
+a little; snow falls in flurries, piles up to half the keyboard's height and melts back a row; the
+shooting stars fly level, slant a row or two, or fall straight down; the aurora and the ripples
+take new shapes and rhythms.
+
+The clock is steady: F1-F12 show the hour, the number keys the minutes (the tens in the effect's
+color, the ones in its accent), and the seconds fill the function row from left to right. Without a
+function row (60HE) the hour goes on 1-0, - and =, and the minutes on Q-P. On a board without
+number keys (UwU) the clock shows the starry sky.
 
 The snake plays itself: it heads for the food by a short path, takes only moves after which it can
 still reach its tail, and strays from the shortest way by a taste for detours drawn for every game.
+It starts slow and speeds up, and the faster it goes, the more it slips, so it loses now and then.
 With *Play with the arrow keys* the arrows steer it, and they do not stop the effect: Wootlight
 then reads the state of the four arrow keys while the snake runs, nothing else. Left alone for a
 few seconds, the snake plays on its own again.

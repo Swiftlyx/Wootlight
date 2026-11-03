@@ -212,8 +212,8 @@ const COMMENTS: &[(&str, &str, &str)] = &[
     ),
     (
         "effect",
-        "Animation while no music plays: \"off\", \"rain\", \"storm\", \"matrix\", \"snow\", \"stars\", \"aurora\",\n\"ripples\", \"fire\", \"life\", \"clock\" or \"snake\".",
-        "Анімація, поки не грає музика: \"off\", \"rain\", \"storm\", \"matrix\", \"snow\", \"stars\", \"aurora\",\n\"ripples\", \"fire\", \"life\", \"clock\" або \"snake\".",
+        "Animation while no music plays: \"off\", \"rain\", \"storm\", \"matrix\", \"snow\", \"stars\", \"aurora\",\n\"ripples\", \"fire\", \"clock\" or \"snake\".",
+        "Анімація, поки не грає музика: \"off\", \"rain\", \"storm\", \"matrix\", \"snow\", \"stars\", \"aurora\",\n\"ripples\", \"fire\", \"clock\" або \"snake\".",
     ),
     (
         "effect_when",

@@ -122,7 +122,7 @@ pub(super) const LANGUAGES: [(&str, &str); 2] = [("en", "English"), ("uk", "Ук
 /// Frequencies labeled under the equalizer view.
 pub(super) const AXIS_TICKS: [f32; 9] = [50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0];
 /// Idle times an effect can wait for, in seconds.
-pub(super) const EFFECT_WAITS: [f32; 4] = [30.0, 60.0, 120.0, 300.0];
+pub(super) const EFFECT_WAITS: [f32; 11] = [30.0, 60.0, 120.0, 300.0, 600.0, 900.0, 1200.0, 1500.0, 1800.0, 2700.0, 3600.0];
 /// Values of `updates`, in the order of the buttons.
 pub(super) const UPDATE_MODES: [(&str, T); 3] = [("auto", T::UpdatesAuto), ("notify", T::UpdatesNotify), ("off", T::UpdatesOff)];
 /// Values of `effect_color`, in the order of the buttons.
@@ -156,6 +156,7 @@ pub(super) enum Drop {
     Device,
     Language,
     Effect,
+    EffectAfter,
 }
 
 /// Which color of the custom scheme a control edits.
@@ -204,8 +205,6 @@ pub(super) enum Action {
     Quit,
     /// Shows the effect always (true) or only when idle.
     EffectWhen(bool),
-    /// Seconds of idle time before the effect starts.
-    EffectAfter(f32),
     EffectColors(&'static str),
     /// Gradient (true) or solid effect color.
     EffectFill(bool),
@@ -760,6 +759,11 @@ impl WindowCore {
                         let code = index.checked_sub(1).and_then(|i| Effect::ALL.get(i)).map_or("off", |e| e.code());
                         self.update_settings(|s| s.effect = code.into());
                     }
+                    Drop::EffectAfter => {
+                        if let Some(secs) = EFFECT_WAITS.get(index) {
+                            self.update_settings(|s| s.effect_after_sec = *secs);
+                        }
+                    }
                 }
             }
             Action::Dismiss => self.dropdown = None,
@@ -772,7 +776,6 @@ impl WindowCore {
             Action::Restore => post(Command::RestoreSettings),
             Action::Quit => post(Command::Quit),
             Action::EffectWhen(always) => self.update_settings(|s| s.effect_when = if always { "always" } else { "idle" }.into()),
-            Action::EffectAfter(secs) => self.update_settings(|s| s.effect_after_sec = secs),
             Action::EffectColors(code) => self.update_settings(|s| s.effect_color = code.into()),
             Action::Updates(mode) => {
                 self.update_settings(|s| s.updates = mode.into());
@@ -983,13 +986,12 @@ impl WindowCore {
                     actions: vec![Action::EffectWhen(false), Action::EffectWhen(true)],
                 });
                 if !always {
-                    rows.push(Row::Choice {
+                    rows.push(Row::Dropdown {
                         id: ID_EFFECT_AFTER,
                         label: t(T::EffectAfter).into(),
                         hint: Some(effect_stop_hint(lang, s.effect_after_sec, self.shared.status().dim_after)),
-                        options: EFFECT_WAITS.iter().map(|w| fmt_wait(lang, *w)).collect(),
-                        selected: EFFECT_WAITS.iter().position(|w| (w - s.effect_after_sec).abs() < 0.5),
-                        actions: EFFECT_WAITS.iter().map(|w| Action::EffectAfter(*w)).collect(),
+                        value: fmt_wait(lang, s.effect_after_sec),
+                        drop: Drop::EffectAfter,
                     });
                 }
                 let mode = EFFECT_COLOR_MODES.iter().position(|(code, _)| *code == s.effect_color);
