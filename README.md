@@ -28,7 +28,8 @@ profile you set up in Wootility, and Wootlight takes over again as soon as sound
 
 It is a single native executable that lives in the tray. There is no installer and no driver. Your
 settings are kept in a file next to the executable. Running in the tray it needs about 30 MB of
-memory and around 1% of one CPU core or less.
+memory and around 1% of one CPU core or less. It also runs on Macs with Apple Silicon, in the menu
+bar: see [macOS](#macos).
 
 <p align="center">
   <img src="docs/screenshots/keyboard.png" width="260" alt="Live keyboard view and color presets">
@@ -42,7 +43,7 @@ memory and around 1% of one CPU core or less.
 
 - [Features](#features) · [Supported keyboards](#supported-keyboards)
 - [Getting started](#getting-started) · [Usage](#usage) · [Settings file](#settings-file)
-- [How it works](#how-it-works) · [Building from source](#building-from-source) ·
+- [How it works](#how-it-works) · [Building from source](#building-from-source) · [macOS](#macos) ·
   [Troubleshooting](#troubleshooting) · [Acknowledgements](#acknowledgements) · [License](#license)
 
 ## Features
@@ -91,6 +92,7 @@ know yet still works, as a plain grid.
    signed: choose *More info* → *Run anyway*.
 
 Requirements: Windows 10 or 11 (64-bit) and a Wooting keyboard. Wootility does not need to run.
+For a Mac, see [macOS](#macos).
 
 ## Usage
 
@@ -210,6 +212,46 @@ its place.
 
 One test creates and deletes a Task Scheduler task named *Wootlight.Test*.
 
+## macOS
+
+Wootlight also runs on Macs with Apple Silicon and macOS 14.4 or later;
+[Jason Bryner](https://github.com/jrbryner) ported it. There is no ready-made download for the Mac
+yet, so build the app yourself. You need [Rust](https://rustup.rs) and the Xcode command line tools
+(`xcode-select --install`).
+
+```sh
+git clone https://github.com/Swiftlyx/Wootlight
+cd Wootlight
+cargo test
+scripts/bundle-macos.sh
+```
+
+The result is `target/Wootlight.app`: move it to *Applications* and open it. The Wooting RGB SDK
+built for arm64 is in `vendor/macos/` and goes into the app; `scripts/build-wooting-sdk-macos.sh`
+builds it again from the SDK's v1.8.0 source.
+
+On the Mac, Wootlight works the same, with these differences:
+
+- **Menu bar.** Wootlight lives in the menu bar, with a monochrome mark and no Dock icon. Click the
+  mark to open or hide the window; right click or Control-click for the menu. Closing the window
+  leaves the app running.
+- **Permission.** The first time Wootlight listens, macOS asks to allow *System Audio Recording*.
+  Without it the bars stay still: allow Wootlight in *System Settings → Privacy & Security → Screen &
+  System Audio Recording*. The sound is analyzed live and is never recorded or sent anywhere. It is
+  captured through Core Audio process taps instead of WASAPI loopback.
+- **Media players.** *React to: Media players* follows *Now Playing* in Control Center and records
+  the playing app's sound alone. Only the app that macOS shows there counts. Since macOS 15.4 Now
+  Playing answers only Apple's own programs, so Wootlight asks it through the system's `perl`: you
+  may see a `perl` process while it runs. If that stops working, Wootlight listens to the whole
+  device.
+- **Open at Login** takes the place of *Start with Windows*. It adds Wootlight to *System Settings →
+  General → Login Items*, and macOS may ask you to approve it there.
+- **Lighting.** The keyboard gets up to about 30 frames a second, because a constant stream of frames
+  makes it lag on keystrokes on macOS. Wootlight opens the keyboard shared, so Wootility still
+  reaches it.
+- **Files.** Settings, the log and the unpacked SDK are in `~/Library/Application Support/Wootlight`,
+  not next to the app, because the app bundle is signed.
+
 ## Troubleshooting
 
 - **The keyboard does not light up.** Close other apps that control RGB lighting, such as OpenRGB
@@ -239,6 +281,9 @@ One test creates and deletes a Task Scheduler task named *Wootlight.Test*.
 - The LED positions were checked against the Wooting matrix maps of
   [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB).
 - The interface follows [Material 3 Expressive](https://m3.material.io/) by Google.
+- [Jason Bryner](https://github.com/jrbryner) ported Wootlight to macOS.
+- Now Playing on macOS is read through the system's `perl`, a way found by
+  [mediaremote-adapter](https://github.com/ungive/mediaremote-adapter).
 
 Wootlight is not affiliated with or endorsed by Wooting. Wooting is a trademark of its owner.
 
