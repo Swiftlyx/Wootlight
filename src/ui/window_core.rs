@@ -19,9 +19,11 @@ use super::{
     wants_dark,
     widgets::*,
 };
+#[cfg(windows)]
+use crate::engine::Preview;
 use crate::{
     autostart,
-    engine::{Owner, Preview, Shared, Status},
+    engine::{Owner, Shared, Status},
     layout::Layout,
     render::{hsv_to_rgb, rgb_to_hs},
     sdk::KeyboardInfo,
