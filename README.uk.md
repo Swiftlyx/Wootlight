@@ -213,9 +213,16 @@ cargo build --release
 ## macOS
 
 Wootlight працює й на Mac з Apple Silicon і macOS 14.4 або новішою; портував його
-[Jason Bryner](https://github.com/jrbryner). Готової збірки для Mac поки немає, тож програму
-потрібно зібрати самому. Знадобляться [Rust](https://rustup.rs) і інструменти командного рядка
-Xcode (`xcode-select --install`).
+[Jason Bryner](https://github.com/jrbryner).
+
+Релізи після 1.2.0 містять `Wootlight-<версія>-macos-arm64.zip`, зібраний на GitHub Actions.
+Розпакуйте його, перенесіть `Wootlight.app` у *Програми* й відкрийте. Програма не нотаризована
+Apple, тож перший запуск macOS заблокує: відкрийте *Системні параметри → Приватність і безпека* й
+натисніть *Усе одно відкрити* (*Open Anyway*) біля Wootlight або один раз виконайте в Терміналі
+`xattr -dr com.apple.quarantine /Applications/Wootlight.app`.
+
+Щоб зібрати самому, знадобляться [Rust](https://rustup.rs) і інструменти командного рядка Xcode
+(`xcode-select --install`).
 
 ```sh
 git clone https://github.com/Swiftlyx/Wootlight
@@ -226,7 +233,7 @@ scripts/bundle-macos.sh
 
 Результат — `target/Wootlight.app`: перенесіть його в *Програми* й відкрийте. Wooting RGB SDK,
 зібраний для arm64, лежить у `vendor/macos/` і вбудовується в програму;
-`scripts/build-wooting-sdk-macos.sh` збирає його наново з коду SDK v1.8.0.
+`scripts/build-wooting-sdk-macos.sh` збирає його наново з коду SDK v1.8.0, як і збірка для релізу.
 
 На Mac Wootlight працює так само, з такими відмінностями:
 

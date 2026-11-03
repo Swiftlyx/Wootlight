@@ -4,8 +4,8 @@
 
 - Wootlight runs on Macs with Apple Silicon and macOS 14.4 or later, in the menu bar, ported by
   Jason Bryner: Core Audio capture of the device or of the playing app alone, *Now Playing* for
-  *React to: Media players*, and *Open at Login*. There is no download for the Mac yet: build it
-  with `scripts/bundle-macos.sh`, as the README describes.
+  *React to: Media players*, and *Open at Login*. Releases get `Wootlight-<version>-macos-arm64.zip`,
+  built on GitHub Actions with the Wooting RGB SDK rebuilt from its source.
 - A frame the keyboard already shows is not sent again, so quiet passages send less over USB.
 
 ## 1.2.0 — 2026-11-03

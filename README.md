@@ -215,8 +215,14 @@ One test creates and deletes a Task Scheduler task named *Wootlight.Test*.
 ## macOS
 
 Wootlight also runs on Macs with Apple Silicon and macOS 14.4 or later;
-[Jason Bryner](https://github.com/jrbryner) ported it. There is no ready-made download for the Mac
-yet, so build the app yourself. You need [Rust](https://rustup.rs) and the Xcode command line tools
+[Jason Bryner](https://github.com/jrbryner) ported it.
+
+Releases after 1.2.0 include `Wootlight-<version>-macos-arm64.zip`, built on GitHub Actions. Unzip
+it, move `Wootlight.app` to *Applications* and open it. The app is not notarized by Apple, so macOS
+blocks the first start: open *System Settings → Privacy & Security* and choose *Open Anyway* next to
+Wootlight, or run `xattr -dr com.apple.quarantine /Applications/Wootlight.app` once in Terminal.
+
+To build it yourself, you need [Rust](https://rustup.rs) and the Xcode command line tools
 (`xcode-select --install`).
 
 ```sh
@@ -228,7 +234,7 @@ scripts/bundle-macos.sh
 
 The result is `target/Wootlight.app`: move it to *Applications* and open it. The Wooting RGB SDK
 built for arm64 is in `vendor/macos/` and goes into the app; `scripts/build-wooting-sdk-macos.sh`
-builds it again from the SDK's v1.8.0 source.
+builds it again from the SDK's v1.8.0 source, as the release build does.
 
 On the Mac, Wootlight works the same, with these differences:
 
