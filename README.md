@@ -29,7 +29,7 @@ profile you set up in Wootility, and Wootlight takes over again as soon as sound
 It is a single native executable that lives in the tray. There is no installer and no driver. Your
 settings are kept in a file next to the executable. Running in the tray it needs about 30 MB of
 memory and around 1% of one CPU core or less. It also runs on Macs with Apple Silicon, in the menu
-bar: see [macOS](#macos).
+bar, thanks to [Jason Bryner](https://github.com/jrbryner): see [macOS](#macos).
 
 <p align="center">
   <img src="docs/screenshots/keyboard.png" width="260" alt="Live keyboard view and color presets">
@@ -277,11 +277,12 @@ On the Mac, Wootlight works the same, with these differences:
 
 ## Acknowledgements
 
+- [Jason Bryner](https://github.com/jrbryner) ported Wootlight to macOS: the sound capture, Now
+  Playing, the menu bar, the window, Open at Login and the SDK build for Apple Silicon.
 - [Wooting RGB SDK](https://github.com/WootingKb/wooting-rgb-sdk) drives the keyboard lighting.
 - The LED positions were checked against the Wooting matrix maps of
   [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB).
 - The interface follows [Material 3 Expressive](https://m3.material.io/) by Google.
-- [Jason Bryner](https://github.com/jrbryner) ported Wootlight to macOS.
 - Now Playing on macOS is read through the system's `perl`, a way found by
   [mediaremote-adapter](https://github.com/ungive/mediaremote-adapter).
 

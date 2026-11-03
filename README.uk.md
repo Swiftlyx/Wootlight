@@ -28,7 +28,8 @@ Wootlight слухає звук, який грає комп'ютер, розкл
 
 Це один нативний exe, що живе в треї. Ні інсталятора, ні драйверів. Налаштування лежать у файлі
 поруч з exe. У треї програмі потрібно близько 30 МБ пам'яті й близько 1% одного ядра процесора або
-менше. Працює він і на Mac з Apple Silicon, у рядку меню: див. [macOS](#macos).
+менше. Завдяки [Jason Bryner](https://github.com/jrbryner) він працює й на Mac з Apple Silicon, у
+рядку меню: див. [macOS](#macos).
 
 <p align="center">
   <img src="docs/screenshots/keyboard.png" width="260" alt="Живий перегляд клавіатури й пресети кольорів">
@@ -276,11 +277,12 @@ scripts/bundle-macos.sh
 
 ## Подяки
 
+- [Jason Bryner](https://github.com/jrbryner) портував Wootlight на macOS: запис звуку, «Зараз
+  відтворюється», рядок меню, вікно, відкриття під час входу й збірку SDK для Apple Silicon.
 - [Wooting RGB SDK](https://github.com/WootingKb/wooting-rgb-sdk) керує підсвіткою клавіатури.
 - Розташування світлодіодів звірено з картами Wooting в
   [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB).
 - Інтерфейс побудований на [Material 3 Expressive](https://m3.material.io/) від Google.
-- [Jason Bryner](https://github.com/jrbryner) портував Wootlight на macOS.
 - «Зараз відтворюється» на macOS читається через системний `perl` — цей спосіб знайшов
   [mediaremote-adapter](https://github.com/ungive/mediaremote-adapter).
 
