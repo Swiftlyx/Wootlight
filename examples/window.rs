@@ -9,7 +9,7 @@
 #[cfg(target_os = "macos")]
 #[path = "../src/mac/audio.rs"]
 mod audio;
-
+#[cfg(target_os = "macos")]
 #[path = "../src/audio_common.rs"]
 mod audio_common;
 #[cfg(target_os = "macos")]
@@ -45,7 +45,7 @@ mod sdk;
 #[cfg(target_os = "macos")]
 #[path = "../src/settings.rs"]
 mod settings;
-
+#[cfg(target_os = "macos")]
 #[path = "../src/shell.rs"]
 mod shell;
 #[cfg(target_os = "macos")]
