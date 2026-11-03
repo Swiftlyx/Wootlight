@@ -1,7 +1,11 @@
-//! Runtime binding to wooting-rgb-sdk64.dll.
+//! Runtime binding to wooting-rgb-sdk64.dll (libwooting-rgb-sdk.dylib on macOS).
 //!
-//! The DLL is embedded in the executable and extracted to %LOCALAPPDATA%\Wootlight
-//! unless a copy sits next to the executable.
+//! The library is embedded in the executable and extracted to %LOCALAPPDATA%\Wootlight
+//! (~/Library/Application Support/Wootlight on macOS) unless a copy sits next to the executable.
+//!
+//! macOS: the dylib is built for arm64 by scripts/build-wooting-sdk-macos.sh. The SDK talks to
+//! the keyboard's vendor-defined HID interface, which macOS opens without any TCC prompt (no
+//! Input Monitoring), bundled or not; hidapi is built to open it shared, not seized.
 
 use std::{
     ffi::{CStr, c_char},
@@ -13,8 +17,14 @@ use libloading::Library;
 
 use crate::{paths, render::Frame};
 
+#[cfg(windows)]
 const DLL_NAME: &str = "wooting-rgb-sdk64.dll";
+#[cfg(windows)]
 static EMBEDDED_DLL: &[u8] = include_bytes!("../vendor/wooting-rgb-sdk64.dll");
+#[cfg(target_os = "macos")]
+const DLL_NAME: &str = "libwooting-rgb-sdk.dylib";
+#[cfg(target_os = "macos")]
+static EMBEDDED_DLL: &[u8] = include_bytes!("../vendor/macos/libwooting-rgb-sdk.dylib");
 
 /// Mirrors WOOTING_USB_META from wooting-usb.h (SDK v1.8.0).
 #[repr(C)]
@@ -144,4 +154,38 @@ fn locate_dll() -> Result<PathBuf, String> {
         fs::write(&path, EMBEDDED_DLL).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok(path)
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use std::{thread, time::Duration};
+
+    use super::*;
+    use crate::render::{FRAME_LEN, SDK_COLS};
+
+    /// Needs a Wooting keyboard: `cargo test hardware_sweep -- --ignored --nocapture`.
+    /// Sweeps a color bar across the board for about 3 s, then restores the profile lighting.
+    #[test]
+    #[ignore = "needs a connected Wooting keyboard"]
+    fn hardware_sweep() {
+        let sdk = Sdk::load().expect("load the SDK");
+        assert!(sdk.connect(), "no Wooting keyboard found");
+        let info = sdk.info();
+        println!("{info:?}");
+        assert!(info.rows > 0 && info.cols > 0 && info.cols <= SDK_COLS);
+        for step in 0..90 {
+            let lit = step % info.cols;
+            let mut frame = [0u8; FRAME_LEN];
+            for row in 0..info.rows {
+                for col in 0..info.cols {
+                    let i = (row * SDK_COLS + col) * 3;
+                    let rgb = if col == lit { [255, 40, 200] } else { [0, 0, 24] };
+                    frame[i..i + 3].copy_from_slice(&rgb);
+                }
+            }
+            assert!(sdk.show(&frame), "frame {step} was not sent");
+            thread::sleep(Duration::from_millis(33));
+        }
+        sdk.close();
+    }
 }

@@ -17,12 +17,24 @@ fn exe_dir() -> Option<PathBuf> {
     env::current_exe().ok().and_then(|p| p.parent().map(PathBuf::from))
 }
 
+#[cfg(windows)]
 fn env_dir(var: &str, app_dir: &str) -> PathBuf {
     env::var_os(var).map(PathBuf::from).or_else(exe_dir).unwrap_or_else(|| PathBuf::from(".")).join(app_dir)
 }
 
+/// ~/Library/Application Support/<app_dir> for both roaming and local data on macOS.
+#[cfg(target_os = "macos")]
+fn env_dir(_var: &str, app_dir: &str) -> PathBuf {
+    env::var_os("HOME")
+        .map(|home| PathBuf::from(home).join("Library/Application Support"))
+        .or_else(exe_dir)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(app_dir)
+}
+
 /// Settings next to the executable (portable). Settings of earlier versions are moved or copied
 /// there once; a folder that cannot be written to (e.g. Program Files) keeps them in %APPDATA%.
+#[cfg(windows)]
 pub fn config_file() -> PathBuf {
     let roaming = env_dir("APPDATA", APP_DIR).join(CONFIG_NAME);
     let legacy_roaming = env_dir("APPDATA", LEGACY_APP_DIR).join(LEGACY_ROAMING_NAME);
@@ -48,6 +60,19 @@ pub fn config_file() -> PathBuf {
         let _ = fs::copy(&legacy_roaming, &roaming);
     }
     roaming
+}
+
+/// On macOS the executable sits inside a signed app bundle, so settings always live in
+/// ~/Library/Application Support/Wootlight; WOOTLIGHT_CONFIG points elsewhere for tests.
+#[cfg(target_os = "macos")]
+pub fn config_file() -> PathBuf {
+    let _ = (LEGACY_CONFIG_NAME, LEGACY_APP_DIR, LEGACY_ROAMING_NAME, OpenOptions::new);
+    if let Some(path) = env::var_os("WOOTLIGHT_CONFIG") {
+        return PathBuf::from(path);
+    }
+    let path = env_dir("", APP_DIR).join(CONFIG_NAME);
+    let _ = path.parent().map(fs::create_dir_all);
+    path
 }
 
 /// Machine-local data: log and extracted DLL.

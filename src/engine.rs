@@ -12,6 +12,7 @@ use std::{
 };
 
 use cpal::Host;
+#[cfg(windows)]
 use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize};
 
 use crate::{
@@ -27,6 +28,12 @@ use crate::{
 };
 
 const KEEPALIVE: Duration = Duration::from_secs(1);
+/// Shortest gap between two frames sent to the keyboard. On macOS a back-to-back stream keeps the
+/// keyboard so busy that it lags on keystrokes and can stop showing the lighting at all.
+#[cfg(target_os = "macos")]
+const SEND_INTERVAL: Duration = Duration::from_millis(33);
+#[cfg(not(target_os = "macos"))]
+const SEND_INTERVAL: Duration = Duration::ZERO;
 const RETRY: Duration = Duration::from_secs(1);
 const IDLE_POLL: Duration = Duration::from_millis(100);
 const DEVICE_CHECK: Duration = Duration::from_secs(2);
@@ -426,6 +433,7 @@ fn describe_sessions(list: &[(String, bool)]) -> String {
 /// Tracks whether a player reports playback, and which process plays it, for the media-only mode.
 fn run_media(shared: &Shared) {
     // SAFETY: balanced by CoUninitialize at the end of this function, on the same thread.
+    #[cfg(windows)]
     let com = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
     let mut sessions: Option<MediaSessions> = None;
     let mut next_connect = Instant::now();
@@ -438,7 +446,7 @@ fn run_media(shared: &Shared) {
         shared.beat(MEDIA, "waiting");
         let playing = if shared.media_only() {
             if sessions.is_none() && Instant::now() >= next_connect {
-                shared.beat(MEDIA, "connecting to the Windows media controls");
+                shared.beat(MEDIA, if cfg!(windows) { "connecting to the Windows media controls" } else { "connecting to Now Playing" });
                 match MediaSessions::connect() {
                     Ok(s) => sessions = Some(s),
                     Err(e) => {
@@ -447,7 +455,7 @@ fn run_media(shared: &Shared) {
                     }
                 }
             }
-            shared.beat(MEDIA, "reading the Windows media controls");
+            shared.beat(MEDIA, if cfg!(windows) { "reading the Windows media controls" } else { "reading Now Playing" });
             match sessions.as_ref().map(MediaSessions::sessions) {
                 Some(Ok(list)) => {
                     if logged.as_ref() != Some(&list) {
@@ -495,6 +503,7 @@ fn run_media(shared: &Shared) {
         shared.sleep(MEDIA_POLL);
     }
     drop(sessions);
+    #[cfg(windows)]
     if com {
         // SAFETY: matches the successful CoInitializeEx above.
         unsafe { CoUninitialize() };
@@ -619,7 +628,7 @@ fn describe_behavior(s: &Settings) -> String {
         "visualizer {}, react to {}, hand back on {release}, audio source {}",
         if s.enabled { "on" } else { "off" },
         if s.media_only { "media players" } else { "any sound" },
-        if s.audio_device.is_empty() { "Windows default" } else { &s.audio_device },
+        if s.audio_device.is_empty() { if cfg!(windows) { "Windows default" } else { "system default" } } else { &s.audio_device },
     )
 }
 
@@ -864,6 +873,7 @@ fn run_keyboard(shared: &Shared) {
     let mut identified = false;
     let mut generation = 0;
     let mut last_seq = 0;
+    let mut last_frame: Option<Frame> = None;
     let mut last_sent = Instant::now();
     let mut stats = SendStats::default();
 
@@ -892,6 +902,7 @@ fn run_keyboard(shared: &Shared) {
             shared.set_keyboard(info);
             identified = true;
             last_seq = 0;
+            last_frame = None;
             if wanted {
                 connected = true;
                 log!("visualizer took over the lighting");
@@ -912,6 +923,11 @@ fn run_keyboard(shared: &Shared) {
             continue;
         }
 
+        // Waiting out the gap first means the frame picked up below is the freshest one.
+        let gap = SEND_INTERVAL.saturating_sub(last_sent.elapsed());
+        if !gap.is_zero() {
+            shared.sleep(gap);
+        }
         let (next_generation, seq, frame) = shared.wait_change(generation, KEEPALIVE.saturating_sub(last_sent.elapsed()));
         generation = next_generation;
         if shared.quitting() {
@@ -919,6 +935,11 @@ fn run_keyboard(shared: &Shared) {
         }
         // A state change without a new frame: re-check who owns the lighting first.
         if seq == last_seq && last_sent.elapsed() < KEEPALIVE {
+            continue;
+        }
+        // Quiet passages render the same frame over and over; the keyboard already shows it.
+        if last_frame == Some(frame) && last_sent.elapsed() < KEEPALIVE {
+            last_seq = seq;
             continue;
         }
         let started = Instant::now();
@@ -930,6 +951,7 @@ fn run_keyboard(shared: &Shared) {
             continue;
         }
         last_seq = seq;
+        last_frame = Some(frame);
         last_sent = Instant::now();
 
         if shared.stats {
