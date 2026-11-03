@@ -2,20 +2,26 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg_attr(target_os = "macos", path = "mac/audio.rs")]
 mod audio;
+#[cfg_attr(target_os = "macos", path = "mac/autostart.rs")]
 mod autostart;
 mod dsp;
 mod engine;
 mod layout;
 mod logging;
+#[cfg_attr(target_os = "macos", path = "mac/media.rs")]
 mod media;
+#[cfg_attr(target_os = "macos", path = "mac/player.rs")]
 mod player;
 mod paths;
 mod render;
 mod sdk;
 mod settings;
+#[cfg_attr(target_os = "macos", path = "mac/tray.rs")]
 mod tray;
 mod ui;
+#[cfg_attr(target_os = "macos", path = "mac/platform.rs")]
 mod win;
 
 use std::{
@@ -44,6 +50,7 @@ fn main() {
     let stats = std::env::args().any(|a| a == "--stats");
     let open_window = std::env::args().any(|a| a == "--open");
     // SAFETY: process-wide setting made before any window exists.
+    #[cfg(windows)]
     unsafe {
         let _ = windows::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(
             windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,

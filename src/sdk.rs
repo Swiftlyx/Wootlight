@@ -1,7 +1,7 @@
-//! Runtime binding to wooting-rgb-sdk64.dll.
+//! Runtime binding to wooting-rgb-sdk64.dll (libwooting-rgb-sdk.dylib on macOS).
 //!
-//! The DLL is embedded in the executable and extracted to %LOCALAPPDATA%\Wootlight
-//! unless a copy sits next to the executable.
+//! The library is embedded in the executable and extracted to %LOCALAPPDATA%\Wootlight
+//! (~/Library/Application Support/Wootlight on macOS) unless a copy sits next to the executable.
 
 use std::{
     ffi::{CStr, c_char},
@@ -13,8 +13,14 @@ use libloading::Library;
 
 use crate::{paths, render::Frame};
 
+#[cfg(windows)]
 const DLL_NAME: &str = "wooting-rgb-sdk64.dll";
+#[cfg(windows)]
 static EMBEDDED_DLL: &[u8] = include_bytes!("../vendor/wooting-rgb-sdk64.dll");
+#[cfg(target_os = "macos")]
+const DLL_NAME: &str = "libwooting-rgb-sdk.dylib";
+#[cfg(target_os = "macos")]
+static EMBEDDED_DLL: &[u8] = include_bytes!("../vendor/macos/libwooting-rgb-sdk.dylib");
 
 /// Mirrors WOOTING_USB_META from wooting-usb.h (SDK v1.8.0).
 #[repr(C)]

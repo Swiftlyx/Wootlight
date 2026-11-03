@@ -12,6 +12,7 @@ use std::{
 };
 
 use cpal::Host;
+#[cfg(windows)]
 use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize};
 
 use crate::{
@@ -426,6 +427,7 @@ fn describe_sessions(list: &[(String, bool)]) -> String {
 /// Tracks whether a player reports playback, and which process plays it, for the media-only mode.
 fn run_media(shared: &Shared) {
     // SAFETY: balanced by CoUninitialize at the end of this function, on the same thread.
+    #[cfg(windows)]
     let com = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
     let mut sessions: Option<MediaSessions> = None;
     let mut next_connect = Instant::now();
@@ -495,6 +497,7 @@ fn run_media(shared: &Shared) {
         shared.sleep(MEDIA_POLL);
     }
     drop(sessions);
+    #[cfg(windows)]
     if com {
         // SAFETY: matches the successful CoInitializeEx above.
         unsafe { CoUninitialize() };

@@ -1,4 +1,5 @@
-//! Log to stderr and %LOCALAPPDATA%\Wootlight\wootlight.log, one line per event with the local
+//! Log to stderr and %LOCALAPPDATA%\Wootlight\wootlight.log (macOS: ~/Library/Application
+//! Support/Wootlight/wootlight.log), one line per event with the local
 //! time and the thread. Every start appends to the file; past `LIMIT` it moves to
 //! wootlight.old.log. Panics and crashes are logged with the place they happened.
 
@@ -8,11 +9,13 @@ use std::{
     io::Write,
     panic,
     path::{Path, PathBuf},
-    ptr,
-    sync::{Mutex, MutexGuard, TryLockError},
+    sync::{Mutex, MutexGuard},
     thread,
 };
+#[cfg(windows)]
+use std::{ptr, sync::TryLockError};
 
+#[cfg(windows)]
 use windows_sys::Win32::{
     Foundation::{EXCEPTION_ACCESS_VIOLATION, HMODULE, MAX_PATH, SYSTEMTIME},
     System::{
@@ -32,6 +35,7 @@ const OLD_FILE_NAME: &str = "wootlight.old.log";
 /// Size at which the log moves to the old file; the two together stay near 2 MiB.
 const LIMIT: u64 = 1 << 20;
 /// Lets Windows Error Reporting handle the crash after it is logged.
+#[cfg(windows)]
 const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
 
 struct Log {
@@ -79,6 +83,7 @@ pub fn init() {
     drop(slot);
     panic::set_hook(Box::new(on_panic));
     // SAFETY: installs a process-wide filter that stays valid for the process lifetime.
+    #[cfg(windows)]
     unsafe { SetUnhandledExceptionFilter(Some(on_crash)) };
 }
 
@@ -101,6 +106,7 @@ fn append(slot: &mut MutexGuard<Option<Log>>, line: &str) {
     }
 }
 
+#[cfg(windows)]
 fn timestamp() -> String {
     // SAFETY: fills a local struct.
     let t = unsafe {
@@ -111,6 +117,22 @@ fn timestamp() -> String {
     format!(
         "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",
         t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond, t.wMilliseconds
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn timestamp() -> String {
+    // SAFETY: localtime_r fills a local struct from the current time.
+    let (t, ms) = unsafe {
+        let mut tv: libc::timeval = std::mem::zeroed();
+        libc::gettimeofday(&mut tv, std::ptr::null_mut());
+        let mut t: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&tv.tv_sec, &mut t);
+        (t, tv.tv_usec / 1000)
+    };
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",
+        t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, ms
     )
 }
 
@@ -127,6 +149,7 @@ fn on_panic(info: &panic::PanicHookInfo) {
 }
 
 /// Logs a crash the Rust runtime cannot catch, such as an access violation in the SDK DLL.
+#[cfg(windows)]
 unsafe extern "system" fn on_crash(info: *const EXCEPTION_POINTERS) -> i32 {
     // SAFETY: Windows passes valid exception pointers to the filter.
     let record = unsafe { &*(*info).ExceptionRecord };
@@ -153,6 +176,7 @@ unsafe extern "system" fn on_crash(info: *const EXCEPTION_POINTERS) -> i32 {
 }
 
 /// `module+0xoffset` for a code address, or the bare address outside any module.
+#[cfg(windows)]
 fn place(address: usize) -> String {
     let mut module: HMODULE = ptr::null_mut();
     let flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
@@ -173,7 +197,7 @@ macro_rules! log {
     ($($arg:tt)*) => { $crate::logging::write(format_args!($($arg)*)) };
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use std::{env, process::Command};
 

@@ -1,21 +1,29 @@
 //! The window, the tray menu and the drawing they share. Everything here runs on the UI thread.
 
+#[cfg_attr(target_os = "macos", path = "mac/canvas.rs")]
 pub mod canvas;
 pub mod design;
+#[cfg_attr(target_os = "macos", path = "mac/frame_clock.rs")]
 pub mod frame_clock;
+pub mod geometry;
 pub mod i18n;
+#[cfg_attr(target_os = "macos", path = "mac/icon.rs")]
 pub mod icon;
 pub mod palette;
 pub mod spring;
+#[cfg_attr(target_os = "macos", path = "mac/tray_menu.rs")]
 pub mod tray_menu;
+#[cfg_attr(target_os = "macos", path = "mac/window.rs")]
 pub mod window;
 
 use std::{
     cell::RefCell,
     collections::VecDeque,
-    sync::atomic::{AtomicU32, Ordering},
 };
+#[cfg(windows)]
+use std::sync::atomic::{AtomicU32, Ordering};
 
+#[cfg(windows)]
 use windows::Win32::{
     Foundation::{LPARAM, WPARAM},
     System::Threading::GetCurrentThreadId,
@@ -26,6 +34,7 @@ use crate::settings::{ColorMode, Settings};
 use palette::{NEUTRAL_SEED, Palette, make_palette};
 
 /// Posted to the UI thread when a command is queued.
+#[cfg(windows)]
 pub const WM_APP_COMMAND: u32 = WM_APP + 20;
 
 /// What the window and the menu ask the app to do.
@@ -43,6 +52,7 @@ pub enum Command {
     Quit,
 }
 
+#[cfg(windows)]
 static UI_THREAD: AtomicU32 = AtomicU32::new(0);
 
 thread_local! {
@@ -52,6 +62,7 @@ thread_local! {
 
 pub fn init_ui_thread() {
     // SAFETY: plain query.
+    #[cfg(windows)]
     UI_THREAD.store(unsafe { GetCurrentThreadId() }, Ordering::SeqCst);
 }
 
@@ -59,9 +70,12 @@ pub fn init_ui_thread() {
 pub fn post(command: Command) {
     QUEUE.with(|q| q.borrow_mut().push_back(command));
     // SAFETY: wakes the UI thread's message loop.
+    #[cfg(windows)]
     unsafe {
         let _ = PostThreadMessageW(UI_THREAD.load(Ordering::SeqCst), WM_APP_COMMAND, WPARAM(0), LPARAM(0));
     }
+    #[cfg(target_os = "macos")]
+    crate::tray::wake();
 }
 
 pub fn take_command() -> Option<Command> {
@@ -103,7 +117,7 @@ pub fn palette_for(settings: &Settings) -> Palette {
     })
 }
 
-/// Segoe Fluent Icons code points.
+/// Segoe Fluent Icons code points; the macOS canvas maps them to SF Symbols.
 pub mod glyph {
     pub const SETTINGS: char = '\u{E713}';
     pub const PALETTE: char = '\u{E790}';
