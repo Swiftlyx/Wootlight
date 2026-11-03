@@ -30,8 +30,8 @@ use windows::{
     core::w,
 };
 
+pub use super::menu::MenuEntry;
 use super::{
-    Command,
     canvas::{Align, Canvas, Rect, TextStyle},
     design,
     palette::{Color, Palette},
@@ -53,24 +53,6 @@ const MAX_WIDTH: f32 = 320.0;
 const GLYPH_CHECK: char = '\u{E73E}';
 const WM_APP_CLOSE: u32 = WM_APP + 21;
 const TIMER_APPEAR: usize = 1;
-
-pub struct MenuEntry {
-    pub text: String,
-    pub glyph: char,
-    pub checked: bool,
-    pub danger: bool,
-    /// None draws a divider.
-    pub command: Option<Command>,
-}
-
-impl MenuEntry {
-    pub fn item(text: &str, glyph: char, command: Command) -> Self {
-        Self { text: text.into(), glyph, checked: false, danger: false, command: Some(command) }
-    }
-    pub fn divider() -> Self {
-        Self { text: String::new(), glyph: ' ', checked: false, danger: false, command: None }
-    }
-}
 
 struct Menu {
     hwnd: HWND,
