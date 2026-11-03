@@ -1,6 +1,8 @@
 //! STUB (UI shell agent): Core Graphics and Core Text drawing in points, with the same drawing
 //! API as the Direct2D canvas in src/ui/canvas.rs so window and icon code can be shared.
 
+use objc2_core_graphics::CGContext;
+
 pub use super::geometry::{Align, Corners, Rect, TextStyle};
 use super::palette::Color;
 
@@ -10,6 +12,10 @@ impl Canvas {
     pub fn new() -> Result<Self, String> {
         Ok(Self)
     }
+    /// Draws into `ctx` until `detach`: points, origin at the top left of a surface `height` points
+    /// tall (the canvas flips the context itself). Call `begin`/`end` around each frame.
+    pub fn attach(&self, _ctx: &CGContext, _height: f32) {}
+    pub fn detach(&self) {}
     pub fn set_offset(&self, _dx: f32, _dy: f32) {}
     pub fn begin(&self) {}
     pub fn end(&self) -> bool {
