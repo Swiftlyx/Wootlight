@@ -274,7 +274,8 @@ pub(super) fn save_state(s: &Settings) -> SaveState {
     }
 }
 
-/// What a live-only redraw reuses from the last full frame.
+/// What a live-only redraw reuses from the last full frame (Windows; macOS redraws in full).
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(super) struct LiveCache {
     pub(super) area: Rect,
     pub(super) owner: Owner,
@@ -566,6 +567,7 @@ impl WindowCore {
     }
 
     /// The live view area of the last full frame while a live-only redraw can reuse it.
+    #[cfg(windows)]
     pub(super) fn live_area(&self, preview: &Preview) -> Option<Rect> {
         let fresh = |c: &&LiveCache| c.owner == preview.owner && c.keyboard == preview.keyboard && c.area.w() > 0.0;
         self.live.as_ref().filter(fresh).map(|c| c.area)
@@ -573,6 +575,7 @@ impl WindowCore {
 
     /// Draws just the live view (the keys or the bars) over its background; `live_area` must be
     /// `Some`. `scale` is device pixels per DIP.
+    #[cfg(windows)]
     pub(super) fn render_live(&mut self, c: &Canvas, preview: &Preview, scale: f32) {
         let Some(cache) = self.live.as_ref() else { return };
         let area = cache.area;

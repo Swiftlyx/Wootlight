@@ -95,6 +95,14 @@ pub enum T {
 
 pub fn tr(lang: Lang, key: T) -> &'static str {
     use T::*;
+    // macOS names the autostart setting after its own Login Items.
+    #[cfg(target_os = "macos")]
+    if key == StartWithWindows {
+        return match lang {
+            Lang::En => "Open at Login",
+            Lang::Uk => "Відкривати під час входу",
+        };
+    }
     match lang {
         Lang::En => match key {
             AppName => "Wootlight",

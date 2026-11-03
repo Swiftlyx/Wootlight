@@ -45,6 +45,9 @@ mod sdk;
 #[cfg(target_os = "macos")]
 #[path = "../src/settings.rs"]
 mod settings;
+
+#[path = "../src/shell.rs"]
+mod shell;
 #[cfg(target_os = "macos")]
 #[path = "../src/mac/tray.rs"]
 mod tray;

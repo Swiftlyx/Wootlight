@@ -19,6 +19,7 @@ mod paths;
 mod render;
 mod sdk;
 mod settings;
+mod shell;
 #[cfg_attr(target_os = "macos", path = "mac/tray.rs")]
 mod tray;
 mod ui;
