@@ -58,6 +58,14 @@ fn main() {
         log!("System Audio Recording permission: {}", audio::permission_text());
         return;
     }
+    // Turns Open at Login on, as the menu toggle does, for setup scripts.
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|a| a == "--open-at-login") {
+        logging::init();
+        let ok = autostart::is_enabled() || autostart::set_enabled(true);
+        log!("Open at Login: {}", if ok && autostart::is_enabled() { "on" } else { "could not be turned on" });
+        return;
+    }
     // SAFETY: process-wide setting made before any window exists.
     #[cfg(windows)]
     unsafe {
