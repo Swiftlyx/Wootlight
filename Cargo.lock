@@ -1876,6 +1876,7 @@ dependencies = [
 name = "wootlight"
 version = "1.2.0"
 dependencies = [
+ "block2",
  "cpal",
  "libc",
  "libloading 0.9.0",

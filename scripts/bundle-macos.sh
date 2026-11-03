@@ -37,6 +37,8 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/Wootlight.icns"
 
-codesign -s - --force --deep "$APP"
+# Ad-hoc signatures pin permissions (System Audio Recording) to one build's hash; requiring only
+# the bundle id lets a rebuilt app keep what the user already allowed.
+codesign -s - --force --deep -r='designated => identifier "io.github.swiftlyx.wootlight"' "$APP"
 codesign --verify --strict "$APP"
 echo "built $APP ($VERSION)"

@@ -56,6 +56,8 @@ const MAX_TREE_DEPTH: usize = 32;
 const TEARDOWN_WAIT: Duration = Duration::from_secs(2);
 const DENIED: &str = "System Audio Recording is not allowed for Wootlight: allow it in System Settings > \
                       Privacy & Security > Screen & System Audio Recording";
+const UNDECIDED: &str = "System Audio Recording is not allowed yet: allow Wootlight in System Settings > \
+                         Privacy & Security > Screen & System Audio Recording";
 
 /// What a capture keeps alive: the tap and the aggregate device that reads it.
 pub(crate) type Source = TapStream;
@@ -148,10 +150,20 @@ fn run_tap(
     ready: &mpsc::SyncSender<Result<u32, String>>,
     stop: &mpsc::Receiver<()>,
 ) {
+    // A tap started before the permission is granted stalls inside coreaudiod, and with it the
+    // playback of every app, so nothing is created until macOS reports the permission granted.
     let permission = audio_capture_permission();
-    if permission == Permission::Denied {
-        let _ = ready.send(Err(DENIED.into()));
-        return;
+    match permission {
+        Permission::Granted => {}
+        Permission::Denied => {
+            let _ = ready.send(Err(DENIED.into()));
+            return;
+        }
+        Permission::Unknown => {
+            request_audio_capture_permission();
+            let _ = ready.send(Err(UNDECIDED.into()));
+            return;
+        }
     }
     let processes = match &target {
         Target::Device { .. } => own_process_object().into_iter().collect(),
@@ -179,7 +191,7 @@ fn run_tap(
         target,
         processes,
         sample_rate: tap.sample_rate,
-        permission_pending: permission != Permission::Granted,
+        permission_pending: false,
         failed,
     };
     watch.run(stop);
@@ -234,6 +246,7 @@ impl Tap {
         // SAFETY: the IOProc was created on this aggregate device.
         check(unsafe { AudioDeviceStart(self.aggregate, self.io_proc) }, "start the tap")?;
         self.started = true;
+        crate::log!("audio tap: started at {} Hz", self.sample_rate);
         Ok(self)
     }
 }
@@ -525,6 +538,44 @@ enum Permission {
     Denied,
     /// Not asked yet, or the state could not be read.
     Unknown,
+}
+
+/// Shows the System Audio Recording prompt once per run, without creating any audio object: a tap
+/// would ask too, but it holds coreaudiod until the prompt is answered. The engine retries the
+/// capture every few seconds and starts once the permission reads granted.
+fn request_audio_capture_permission() {
+    type Request = unsafe extern "C" fn(*const c_void, *const c_void, *const c_void);
+    static ASKED: AtomicBool = AtomicBool::new(false);
+    if ASKED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    // SAFETY: dlopen and dlsym with NUL-terminated strings; the framework stays loaded and
+    // TCCAccessRequest takes a service, an options dictionary and a completion block.
+    let request = unsafe {
+        let tcc = libc::dlopen(c"/System/Library/PrivateFrameworks/TCC.framework/Versions/A/TCC".as_ptr(), libc::RTLD_LAZY);
+        let symbol = if tcc.is_null() { ptr::null_mut() } else { libc::dlsym(tcc, c"TCCAccessRequest".as_ptr()) };
+        (!symbol.is_null()).then(|| std::mem::transmute::<*mut c_void, Request>(symbol))
+    };
+    let Some(request) = request else {
+        crate::log!("audio: cannot ask for System Audio Recording; allow Wootlight in System Settings");
+        return;
+    };
+    crate::log!("audio: asking for System Audio Recording");
+    let service = NSString::from_str("kTCCServiceAudioCapture");
+    let done = block2::RcBlock::new(|granted: u8| {
+        crate::log!("audio: System Audio Recording {}", if granted != 0 { "allowed" } else { "not allowed" });
+    });
+    // SAFETY: NSString is toll-free bridged to CFString; TCC copies the block before returning.
+    unsafe { request(Retained::as_ptr(&service).cast(), ptr::null(), block2::RcBlock::as_ptr(&done).cast()) };
+}
+
+/// The System Audio Recording permission as macOS reports it to this process, for `--audio-permission`.
+pub fn permission_text() -> &'static str {
+    match audio_capture_permission() {
+        Permission::Granted => "granted",
+        Permission::Denied => "denied",
+        Permission::Unknown => "not decided",
+    }
 }
 
 /// The "System Audio Recording Only" permission, from TCC's private preflight call (the only way

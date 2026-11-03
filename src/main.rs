@@ -51,6 +51,13 @@ pub fn stop_engine() {
 fn main() {
     let stats = std::env::args().any(|a| a == "--stats");
     let open_window = std::env::args().any(|a| a == "--open");
+    // Reports the System Audio Recording permission without touching any audio device.
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|a| a == "--audio-permission") {
+        logging::init();
+        log!("System Audio Recording permission: {}", audio::permission_text());
+        return;
+    }
     // SAFETY: process-wide setting made before any window exists.
     #[cfg(windows)]
     unsafe {
