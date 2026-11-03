@@ -11,7 +11,7 @@ use super::{
     canvas::{Align, Canvas, Rect, TextStyle},
     design::*,
     glyph,
-    i18n::{Lang, T, tr},
+    i18n::{Lang, T, effect_label, tr},
     icon::{self, Mark},
     palette::Palette,
     palette_for, post, seed_for,
@@ -23,6 +23,7 @@ use super::{
 use crate::engine::Preview;
 use crate::{
     autostart,
+    effects::Effect,
     engine::{Owner, Shared, Status},
     layout::Layout,
     render::{hsv_to_rgb, rgb_to_hs},
@@ -67,6 +68,12 @@ pub(super) const ID_CONFIG: u64 = 281;
 pub(super) const ID_REVEAL: u64 = 282;
 pub(super) const ID_QUIT: u64 = 283;
 pub(super) const ID_LOG: u64 = 284;
+pub(super) const ID_EFFECT: u64 = 290;
+pub(super) const ID_EFFECT_WHEN: u64 = 292;
+pub(super) const ID_EFFECT_AFTER: u64 = 300;
+pub(super) const ID_EFFECT_COLORS: u64 = 310;
+pub(super) const ID_EFFECT_FILL: u64 = 320;
+pub(super) const ID_EFFECT_COLOR_EDIT: u64 = 330;
 pub(super) const ID_MENU_ITEM: u64 = 1000;
 
 // Spring properties.
@@ -107,11 +114,16 @@ pub(super) const SENSITIVITY: [(f32, f32, T); 3] =
 pub(super) const LANGUAGES: [(&str, &str); 2] = [("en", "English"), ("uk", "Українська")];
 /// Frequencies labeled under the equalizer view.
 pub(super) const AXIS_TICKS: [f32; 9] = [50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0];
+/// Idle times an effect can wait for, in seconds.
+pub(super) const EFFECT_WAITS: [f32; 4] = [30.0, 60.0, 120.0, 300.0];
+/// Values of `effect_color`, in the order of the buttons.
+pub(super) const EFFECT_COLOR_MODES: [(&str, T); 3] = [("natural", T::EffectNatural), ("scheme", T::EffectScheme), ("custom", T::EffectCustom)];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Page {
     Look,
     Sound,
+    Effects,
     Settings,
 }
 
@@ -133,6 +145,7 @@ pub(super) enum Drop {
     Range,
     Device,
     Language,
+    Effect,
 }
 
 /// Which color of the custom scheme a control edits.
@@ -148,6 +161,9 @@ pub(super) enum SliderKind {
     Brightness,
     Hue(Part),
     Saturation(Part),
+    /// The same for the effects' own color.
+    EffectHue(Part),
+    EffectSaturation(Part),
 }
 
 #[derive(Clone, Debug)]
@@ -174,6 +190,13 @@ pub(super) enum Action {
     RevealConfig,
     OpenLog,
     Quit,
+    /// Shows the effect always (true) or only when idle.
+    EffectWhen(bool),
+    /// Seconds of idle time before the effect starts.
+    EffectAfter(f32),
+    EffectColors(&'static str),
+    /// Gradient (true) or solid effect color.
+    EffectFill(bool),
 }
 
 pub(super) struct Hit {
@@ -360,6 +383,8 @@ pub(super) struct WindowCore {
     dragging: Option<(SliderKind, Settings)>,
     /// Last hue per custom part, kept while its saturation is zero.
     hues: [f32; 3],
+    /// The same for the effects' own color.
+    effect_hues: [f32; 3],
     /// The swatch picked or edited last: it stays selected while the color matches it, even when
     /// another swatch has the same color.
     picked: Option<usize>,
@@ -397,6 +422,7 @@ impl WindowCore {
             moving: false,
             dragging: None,
             hues: [0.45; 3],
+            effect_hues: [0.6; 3],
             picked: None,
             window_buttons: true,
             header_inset: 0.0,
@@ -611,8 +637,12 @@ impl WindowCore {
 
     /// Hue and saturation of a custom color part, keeping the hue while the color is white.
     pub(super) fn hue_sat(&self, rgb: [f32; 3], part: Part) -> (f32, f32) {
-        let (h, s) = rgb_to_hs(rgb);
-        if s < 0.02 { (self.hues[part as usize], s) } else { (h, s) }
+        hue_sat_with(&self.hues, rgb, part)
+    }
+
+    /// The same for the effects' own color.
+    pub(super) fn effect_hue_sat(&self, rgb: [f32; 3], part: Part) -> (f32, f32) {
+        hue_sat_with(&self.effect_hues, rgb, part)
     }
 
     /// The selected swatch and its color, as the color editor shows them.
@@ -629,6 +659,7 @@ impl WindowCore {
                     self.page = page;
                     self.scroll = 0.0;
                     self.anim.set((ID_SCROLL, P_POSITION), 0.0);
+                    self.shared.set_effect_preview(page == Page::Effects);
                 }
             }
             Action::View(view) => self.view = view,
@@ -707,6 +738,10 @@ impl WindowCore {
                             self.update_settings(|s| s.language = (*code).into());
                         }
                     }
+                    Drop::Effect => {
+                        let code = index.checked_sub(1).and_then(|i| Effect::ALL.get(i)).map_or("off", |e| e.code());
+                        self.update_settings(|s| s.effect = code.into());
+                    }
                 }
             }
             Action::Dismiss => self.dropdown = None,
@@ -716,6 +751,17 @@ impl WindowCore {
             Action::RevealConfig => post(Command::RevealConfig),
             Action::OpenLog => post(Command::OpenLog),
             Action::Quit => post(Command::Quit),
+            Action::EffectWhen(always) => self.update_settings(|s| s.effect_when = if always { "always" } else { "idle" }.into()),
+            Action::EffectAfter(secs) => self.update_settings(|s| s.effect_after_sec = secs),
+            Action::EffectColors(code) => self.update_settings(|s| s.effect_color = code.into()),
+            Action::EffectFill(gradient) => self.update_settings(|s| {
+                let custom = match (Custom::parse(&s.effect_custom_color), gradient) {
+                    (Custom::Solid(c), true) => Custom::Gradient { bottom: c, top: [255.0; 3] },
+                    (Custom::Gradient { bottom, .. }, false) => Custom::Solid(bottom),
+                    (c, _) => c,
+                };
+                s.effect_custom_color = custom.code();
+            }),
         }
         After::None
     }
@@ -746,6 +792,8 @@ impl WindowCore {
             SliderKind::Brightness => s.brightness,
             SliderKind::Hue(part) => self.hue_sat(self.edited(s).1.part(part), part).0,
             SliderKind::Saturation(part) => self.hue_sat(self.edited(s).1.part(part), part).1,
+            SliderKind::EffectHue(part) => self.effect_hue_sat(Custom::parse(&s.effect_custom_color).part(part), part).0,
+            SliderKind::EffectSaturation(part) => self.effect_hue_sat(Custom::parse(&s.effect_custom_color).part(part), part).1,
         }
     }
 
@@ -768,6 +816,17 @@ impl WindowCore {
                     sat = value;
                 }
                 set_own_color(&mut s, index, custom.with_part(part, hsv_to_rgb(h, sat)).code());
+            }
+            SliderKind::EffectHue(part) | SliderKind::EffectSaturation(part) => {
+                let custom = Custom::parse(&s.effect_custom_color);
+                let (mut h, mut sat) = self.effect_hue_sat(custom.part(part), part);
+                if matches!(kind, SliderKind::EffectHue(_)) {
+                    h = value;
+                    self.effect_hues[part as usize] = value;
+                } else {
+                    sat = value;
+                }
+                s.effect_custom_color = custom.with_part(part, hsv_to_rgb(h, sat)).code();
             }
         }
         s
@@ -806,7 +865,7 @@ impl WindowCore {
                     for (i, (part, label)) in parts.iter().enumerate() {
                         let rgb = custom.part(*part);
                         let (hue, sat) = self.hue_sat(rgb, *part);
-                        rows.push(Row::ColorEdit { id: ID_COLOR_EDIT + 2 * i as u64, label: t(*label).into(), part: *part, rgb, hue, sat });
+                        rows.push(Row::ColorEdit { id: ID_COLOR_EDIT + 2 * i as u64, label: t(*label).into(), part: *part, rgb, hue, sat, effect: false });
                     }
                     rows.push(if selected == CUSTOM {
                         let state = save_state(s);
@@ -864,6 +923,67 @@ impl WindowCore {
                         ],
                     },
                 ]
+            }
+            Page::Effects => {
+                let effect = s.effect();
+                let mut rows = vec![Row::Dropdown {
+                    id: ID_EFFECT,
+                    label: t(T::Effect).into(),
+                    hint: Some(t(T::EffectHint).into()),
+                    value: t(effect_label(effect)).into(),
+                    drop: Drop::Effect,
+                }];
+                if effect.is_none() {
+                    return vec![Group { title: Some(t(T::SectionEffect).into()), rows }];
+                }
+                let always = s.effect_always();
+                rows.push(Row::Choice {
+                    id: ID_EFFECT_WHEN,
+                    label: t(T::EffectWhen).into(),
+                    hint: Some(t(if always { T::EffectAlwaysHint } else { T::EffectIdleHint }).into()),
+                    options: vec![t(T::EffectWhenIdle).into(), t(T::EffectWhenAlways).into()],
+                    selected: Some(always as usize),
+                    actions: vec![Action::EffectWhen(false), Action::EffectWhen(true)],
+                });
+                if !always {
+                    rows.push(Row::Choice {
+                        id: ID_EFFECT_AFTER,
+                        label: t(T::EffectAfter).into(),
+                        hint: Some(effect_stop_hint(lang, s.effect_after_sec, self.shared.status().dim_after)),
+                        options: EFFECT_WAITS.iter().map(|w| fmt_wait(lang, *w)).collect(),
+                        selected: EFFECT_WAITS.iter().position(|w| (w - s.effect_after_sec).abs() < 0.5),
+                        actions: EFFECT_WAITS.iter().map(|w| Action::EffectAfter(*w)).collect(),
+                    });
+                }
+                let mode = EFFECT_COLOR_MODES.iter().position(|(code, _)| *code == s.effect_color);
+                let mut colors = vec![Row::Choice {
+                    id: ID_EFFECT_COLORS,
+                    label: t(T::EffectColors).into(),
+                    hint: Some(t(T::EffectColorsHint).into()),
+                    options: EFFECT_COLOR_MODES.iter().map(|(_, k)| t(*k).to_string()).collect(),
+                    selected: mode,
+                    actions: EFFECT_COLOR_MODES.iter().map(|(code, _)| Action::EffectColors(code)).collect(),
+                }];
+                if s.effect_color == "custom" {
+                    let custom = Custom::parse(&s.effect_custom_color);
+                    let gradient = matches!(custom, Custom::Gradient { .. });
+                    colors.push(Row::Choice {
+                        id: ID_EFFECT_FILL,
+                        label: t(T::Fill).into(),
+                        hint: None,
+                        options: vec![t(T::FillSolid).into(), t(T::FillGradient).into()],
+                        selected: Some(gradient as usize),
+                        actions: vec![Action::EffectFill(false), Action::EffectFill(true)],
+                    });
+                    let parts: &[(Part, T)] =
+                        if gradient { &[(Part::Bottom, T::EffectBase), (Part::Top, T::EffectHighlight)] } else { &[(Part::Solid, T::ColorSingle)] };
+                    for (i, (part, label)) in parts.iter().enumerate() {
+                        let rgb = custom.part(*part);
+                        let (hue, sat) = self.effect_hue_sat(rgb, *part);
+                        colors.push(Row::ColorEdit { id: ID_EFFECT_COLOR_EDIT + 2 * i as u64, label: t(*label).into(), part: *part, rgb, hue, sat, effect: true });
+                    }
+                }
+                vec![Group { title: Some(t(T::SectionEffect).into()), rows }, Group { title: Some(t(T::SectionEffectColors).into()), rows: colors }]
             }
             Page::Settings => {
                 let mut groups = Vec::new();
@@ -1015,6 +1135,12 @@ impl WindowCore {
         self.show_focus = true;
         self.dirty = true;
     }
+}
+
+/// Hue and saturation of `rgb`, keeping the remembered hue of `part` while the color is white.
+fn hue_sat_with(hues: &[f32; 3], rgb: [f32; 3], part: Part) -> (f32, f32) {
+    let (h, s) = rgb_to_hs(rgb);
+    if s < 0.02 { (hues[part as usize], s) } else { (h, s) }
 }
 
 #[cfg(test)]

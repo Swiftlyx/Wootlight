@@ -62,6 +62,11 @@ bar, thanks to [Jason Bryner](https://github.com/jrbryner): see [macOS](#macos).
   browser. Voice chat in Discord, games and system sounds stay off the keyboard.
 - **Your lighting when silent.** After a few seconds of silence the keyboard shows its own profile
   until sound comes back. When Wootlight quits, the profile comes back too.
+- **Effects while it is quiet.** Eleven animations for the time no music plays: rain, a
+  thunderstorm, the Matrix, snow, a starry sky, an aurora, ripples, fire, the Game of Life, a clock
+  and a snake that plays itself. They start after a while without keyboard or mouse input and stop
+  when you are back or when the keyboard would dim, or they run whenever no music plays. In their
+  own colors, the visualizer's, or yours.
 - **A live view.** The window shows the keyboard exactly as it is lit, or a plain equalizer of the
   same bands with a frequency scale, so you can see how the two compare. It draws at your monitor's
   refresh rate.
@@ -105,14 +110,17 @@ tall bars while music plays, low bars in silence, an outline while the visualize
 - Starting `Wootlight.exe` again opens the window of the copy that is already running.
 
 At the top of the window is the live view, with the *Keyboard | Equalizer* switch and the main on/off
-switch. Below it are three pages:
+switch. Below it are four pages:
 
 - **Look**: the color presets, your own color (*Solid* or *Gradient*, set by hue and saturation),
   *Save as preset*, and brightness. Pick a saved preset to adjust it with the sliders or delete it.
 - **Sound**: sensitivity (how often the bars reach the top row), the frequency range (20 Hz – 5 kHz,
   30 Hz – 10 kHz, 40 Hz – 16 kHz or 20 Hz – 20 kHz), *Even out frequencies*, the audio source,
   *React to: Any sound | Media players*, and *Your lighting when silent*.
-- **Settings**: language, theme, *Start with Windows*, the settings file, *Show in folder*.
+- **Effects**: the animation for the time no music plays, *Show: When idle | Always*, how long to
+  wait (*Start after*), and its colors: *Natural*, *Visualizer* (the colors of *Look*) or *Custom*.
+  While this page is open, the keyboard shows the effect.
+- **Settings**: language, theme, *Start with Windows*, the settings file, *Show in folder*, the log.
 
 The window works from the keyboard too: Tab and Shift+Tab move the focus, Enter or Space presses,
 ← and → move a slider, Esc closes a list or hides the window.
@@ -148,6 +156,11 @@ language.
 | `media_only` | `false` | Listen only to the player that shows playback in the Windows media controls. |
 | `release_when_silent` | `true` | Show the keyboard's own lighting while nothing plays. |
 | `release_after_sec` | `3.0` | Seconds of silence before that (0.5 – 600). |
+| `effect` | `"off"` | Animation while no music plays: `"rain"`, `"storm"`, `"matrix"`, `"snow"`, `"stars"`, `"aurora"`, `"ripples"`, `"fire"`, `"life"`, `"clock"`, `"snake"` or `"off"`. |
+| `effect_when` | `"idle"` | `"idle"`: after `effect_after_sec` without keyboard or mouse input; `"always"`: whenever no music plays. |
+| `effect_after_sec` | `60.0` | Seconds without input before the effect starts (10 – 3600). |
+| `effect_color` | `"natural"` | `"natural"`, `"scheme"` (the visualizer's color) or `"custom"`. |
+| `effect_custom_color` | `"#1060ff>#ffffff"` | Your own effect color: one color, or base to highlight like `"#1060ff>#ffffff"`. |
 
 The *Low*, *Medium* and *High* sensitivity presets are pairs of `range_db` and `headroom_db`.
 
@@ -191,6 +204,15 @@ process among the apps that make sound, and records that process alone (process 
 10 version 2004 or later). The status line under the live view then names the player instead of
 the device. A browser counts as one app, so all of its tabs are heard together. If Wootlight
 cannot tell which process plays, it listens to the whole device while the player plays.
+
+*Effects* never show over music. *When idle*, an effect starts once the keyboard and the mouse
+have rested for *Start after*; Wootlight asks Windows only how long ago the last input was, never
+which keys were pressed. It stops at the next input, and when the keyboard's *Dim After* from
+Wootility passes, so the keyboard still dims as you set it up; Wootlight reads that time from the
+keyboard when it connects. *Always* shows the effect instead of your profile whenever no music
+plays, and the keyboard does not dim meanwhile. The clock spells the time on the number keys, hours
+then minutes, while the function row fills up with the seconds. On a board without number keys
+(UwU) it shows the starry sky.
 
 ## Building from source
 
@@ -271,6 +293,9 @@ On the Mac, Wootlight works the same, with these differences:
   Wootlight too, until you press any key. Wootlight cannot lift it: the firmware takes no command
   for that. Press a key (a media key on the keyboard to start the music works too), set *Dim After*
   to a longer time or turn it off. While Wootlight drives the lighting, the keyboard does not dim.
+- **The effect never starts when idle.** *Start after* has to be shorter than *Dim After* in
+  Wootility: the page says when it is not. Music, or any sound with *React to: Any sound*, also
+  keeps it away.
 - **The bars rarely reach the top, or always sit there.** Change the sensitivity, or turn *Even out
   frequencies* on or off.
 - **It did not start with Windows.** Check that the *Wootlight* task exists in Task Scheduler and

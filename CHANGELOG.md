@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- A new *Effects* page with eleven animations for the time no music plays: rain, a thunderstorm,
+  the Matrix, snow, a starry sky, an aurora, ripples, fire, the Game of Life, a clock and a snake
+  that plays itself. *When idle*, an effect starts after a while without keyboard or mouse input
+  and stops at the next input or when the keyboard's *Dim After* from Wootility passes; *Always*
+  shows it whenever no music plays. Colors: the effect's own, the visualizer's, or your own solid
+  color or gradient. While the page is open, the keyboard previews the effect.
+- The log notes the keyboard's *Dim After* and why an effect started or stopped.
+
 ## 1.3.0 — 2026-11-03
 
 - Wootlight runs on Macs with Apple Silicon and macOS 14.4 or later, in the menu bar, ported by

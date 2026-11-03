@@ -8,6 +8,7 @@ mod audio_common;
 #[cfg_attr(target_os = "macos", path = "mac/autostart.rs")]
 mod autostart;
 mod dsp;
+mod effects;
 mod engine;
 mod layout;
 mod logging;

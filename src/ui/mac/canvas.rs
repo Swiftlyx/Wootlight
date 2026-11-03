@@ -63,6 +63,7 @@ pub fn symbol_name(glyph: char) -> Option<&'static str> {
         BUG => "ant",
         ADD => "plus",
         DELETE => "trash",
+        SPARKLE => "sparkles",
         _ => return None,
     })
 }
@@ -669,6 +670,7 @@ mod tests {
             glyph::BUG,
             glyph::ADD,
             glyph::DELETE,
+            glyph::SPARKLE,
         ];
         for (i, g) in glyphs.iter().enumerate() {
             let (cx, cy) = (20.0 + i as f32 * 23.0, 290.0);

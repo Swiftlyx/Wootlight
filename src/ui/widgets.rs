@@ -2,16 +2,19 @@
 //! button groups, sliders, swatches, the live keyboard or equalizer, the navigation bar and menus.
 //! Platform-neutral: the Win32 and AppKit hosts share it through `window_core`.
 
+use std::time::Duration;
+
 use super::{
     canvas::{Align, Canvas, Corners, Rect, TextStyle},
     design::*,
     glyph,
-    i18n::{Lang, T, tr},
+    i18n::{Lang, T, effect_label, tr},
     palette::{Color, Palette},
     spring::Animator,
     window_core::*,
 };
 use crate::{
+    effects::Effect,
     engine::{Owner, Preview, Status},
     layout::Layout,
     render::{SDK_COLS, SDK_ROWS, color_at, hsv_to_rgb},
@@ -23,7 +26,8 @@ pub(super) enum Row {
     Choice { id: u64, label: String, hint: Option<String>, options: Vec<String>, selected: Option<usize>, actions: Vec<Action> },
     Dropdown { id: u64, label: String, hint: Option<String>, value: String, drop: Drop },
     Slider { id: u64, label: String, value: f32 },
-    ColorEdit { id: u64, label: String, part: Part, rgb: [f32; 3], hue: f32, sat: f32 },
+    /// `effect` edits the effects' own color instead of the visualizer's.
+    ColorEdit { id: u64, label: String, part: Part, rgb: [f32; 3], hue: f32, sat: f32, effect: bool },
     Swatches { swatches: Vec<ColorMode>, selected: usize, caption: String },
     Nav { id: u64, glyph: char, title: String, subtitle: String, action: Action },
     /// A whole-tile command; without an action it is shown disabled.
@@ -66,6 +70,37 @@ pub(super) fn fmt_hz(lang: Lang, hz: f32, short: bool) -> String {
 
 pub(super) fn fmt_range(lang: Lang, fmin: f32, fmax: f32) -> String {
     format!("{} – {}", fmt_hz(lang, fmin, false), fmt_hz(lang, fmax, false))
+}
+
+/// "30 s", "2 min" or "1.5 min".
+pub(super) fn fmt_wait(lang: Lang, secs: f32) -> String {
+    let uk = lang == Lang::Uk;
+    if secs < 60.0 {
+        return format!("{} {}", secs.round(), if uk { "с" } else { "s" });
+    }
+    let min = secs / 60.0;
+    let n = if (min - min.round()).abs() < 0.05 { format!("{}", min.round()) } else { format!("{min:.1}") };
+    format!("{n} {}", if uk { "хв" } else { "min" })
+}
+
+/// When an idle effect stops: at the keyboard's Dim After (`ZERO` when off, None when unknown).
+pub(super) fn effect_stop_hint(lang: Lang, after_sec: f32, dim_after: Option<Duration>) -> String {
+    let uk = lang == Lang::Uk;
+    match dim_after {
+        Some(dim) if !dim.is_zero() => {
+            let d = fmt_wait(lang, dim.as_secs_f32());
+            match (dim.as_secs_f32() <= after_sec, uk) {
+                (true, false) => format!("Your keyboard dims after {d} (Dim After in Wootility), before the effect would start. Pick a shorter wait or a longer Dim After."),
+                (true, true) => format!("Клавіатура тьмяніє через {d} (Dim After у Wootility), ще до старту ефекту. Виберіть коротше очікування або довший Dim After."),
+                (false, false) => format!("It stops when your keyboard dims, {d} after your last input (Dim After in Wootility)."),
+                (false, true) => format!("Ефект зупиняється, коли клавіатура тьмяніє: через {d} від останньої дії (Dim After у Wootility)."),
+            }
+        }
+        Some(_) if uk => "Dim After у Wootility вимкнено, тож ефект іде, доки ви не скористаєтеся клавіатурою чи мишею.".into(),
+        Some(_) => "Dim After is off in Wootility, so it runs until you use the keyboard or mouse.".into(),
+        None if uk => "Ефект іде, доки ви не скористаєтеся клавіатурою чи мишею.".into(),
+        None => "It runs until you use the keyboard or mouse.".into(),
+    }
 }
 
 pub(super) fn rgb_color(rgb: [f32; 3]) -> Color {
@@ -258,16 +293,18 @@ impl Ui<'_> {
                 self.c.text(&pct, Rect::new(right - 60.0, rect.t + 6.0, right, rect.t + 34.0), TextStyle::BodyMedium, p.on_surface_variant, Align::Trailing);
                 self.slider(*id, CONTENT_INSET, right, rect.t + 54.0, *value);
             }
-            Row::ColorEdit { id, label, part, rgb, hue, sat } => {
+            Row::ColorEdit { id, label, part, rgb, hue, sat, effect } => {
                 self.c.text(label, Rect::new(CONTENT_INSET, rect.t + 6.0, right - 110.0, rect.t + 34.0), TextStyle::BodyLarge, p.on_surface, Align::Leading);
                 let code = Custom::Solid(*rgb).code();
                 self.c.text(&code, Rect::new(right - 84.0, rect.t + 6.0, right, rect.t + 34.0), TextStyle::BodyMedium, p.on_surface_variant, Align::Trailing);
                 let chip = Rect::new(right - 106.0, rect.t + 10.0, right - 86.0, rect.t + 30.0);
                 self.c.fill_round(chip, RADIUS_SMALL, rgb_color(*rgb));
                 self.c.stroke_round(chip.inset(0.5, 0.5), RADIUS_SMALL - 0.5, p.outline_variant, 1.0);
-                self.color_slider(*id, CONTENT_INSET, right, rect.t + 52.0, *hue, &rainbow_stops(), SliderKind::Hue(*part));
+                let (hue_kind, sat_kind) =
+                    if *effect { (SliderKind::EffectHue(*part), SliderKind::EffectSaturation(*part)) } else { (SliderKind::Hue(*part), SliderKind::Saturation(*part)) };
+                self.color_slider(*id, CONTENT_INSET, right, rect.t + 52.0, *hue, &rainbow_stops(), hue_kind);
                 let pure = rgb_color(hsv_to_rgb(*hue, 1.0));
-                self.color_slider(*id + 1, CONTENT_INSET, right, rect.t + 84.0, *sat, &[Color::rgb8(255, 255, 255), pure], SliderKind::Saturation(*part));
+                self.color_slider(*id + 1, CONTENT_INSET, right, rect.t + 84.0, *sat, &[Color::rgb8(255, 255, 255), pure], sat_kind);
             }
             Row::Swatches { swatches, selected, caption } => {
                 let cols = SWATCH_COLUMNS as f32;
@@ -468,6 +505,7 @@ pub(super) fn draw_preview(ui: &mut Ui, preview: &Preview, layout: &Layout, s: &
         (false, _) => (T::StatePaused, p.outline),
         (true, Owner::Live) => (T::StateLive, p.primary),
         (true, Owner::Idle) => (T::StateIdle, p.tertiary),
+        (true, Owner::Effect) => (effect_label(s.effect()), p.tertiary),
         (true, Owner::NoKeyboard) => (T::StateNoKeyboard, p.error),
         (true, _) => (T::StateStarting, p.outline),
     };
@@ -508,7 +546,7 @@ pub(super) fn draw_live_view(ui: &mut Ui, preview: &Preview, layout: &Layout, mo
 
 pub(super) fn draw_keys(ui: &mut Ui, layout: &Layout, preview: &Preview, area: Rect, u: f32, top_row: usize, rows: usize) {
     let unlit = ui.p.surface_container_highest;
-    let live = preview.owner == Owner::Live;
+    let live = matches!(preview.owner, Owner::Live | Owner::Effect);
     let f_gap = f_row_gap(top_row, rows);
     let left = area.l + (area.w() - layout.width * u) / 2.0;
     for key in &layout.keys {
@@ -582,7 +620,12 @@ pub(super) fn draw_nav(ui: &mut Ui, page: Page, height: f32) {
     let p = ui.p;
     let bar = Rect::new(0.0, height - NAV_HEIGHT, ui.width, height);
     ui.c.fill_rect(bar, p.surface_container);
-    let items = [(Page::Look, glyph::PALETTE, T::NavLook), (Page::Sound, glyph::EQUALIZER, T::NavSound), (Page::Settings, glyph::SETTINGS, T::NavSettings)];
+    let items = [
+        (Page::Look, glyph::PALETTE, T::NavLook),
+        (Page::Sound, glyph::EQUALIZER, T::NavSound),
+        (Page::Effects, glyph::SPARKLE, T::NavEffects),
+        (Page::Settings, glyph::SETTINGS, T::NavSettings),
+    ];
     let w = ui.width / items.len() as f32;
     for (i, (target, g, label)) in items.iter().enumerate() {
         let id = ID_NAV + i as u64;
@@ -616,6 +659,10 @@ pub(super) fn dropdown_items(drop: Drop, s: &Settings, devices: &[String], lang:
         Drop::Language => (
             LANGUAGES.iter().map(|(_, name)| name.to_string()).collect(),
             LANGUAGES.iter().position(|(code, _)| *code == s.language),
+        ),
+        Drop::Effect => (
+            [None].into_iter().chain(Effect::ALL.map(Some)).map(|e| tr(lang, effect_label(e)).to_string()).collect(),
+            Some(s.effect().and_then(|e| Effect::ALL.iter().position(|a| *a == e)).map_or(0, |i| i + 1)),
         ),
     }
 }

@@ -140,4 +140,5 @@ pub mod glyph {
     pub const BUG: char = '\u{EBE8}';
     pub const ADD: char = '\u{E710}';
     pub const DELETE: char = '\u{E74D}';
+    pub const SPARKLE: char = '\u{F4A5}';
 }

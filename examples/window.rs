@@ -19,6 +19,9 @@ mod autostart;
 #[path = "../src/dsp.rs"]
 mod dsp;
 #[cfg(target_os = "macos")]
+#[path = "../src/effects.rs"]
+mod effects;
+#[cfg(target_os = "macos")]
 #[path = "../src/engine.rs"]
 mod engine;
 #[cfg(target_os = "macos")]

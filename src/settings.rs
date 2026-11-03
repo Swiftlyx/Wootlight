@@ -4,6 +4,8 @@ use std::{fs, io, path::Path};
 
 use serde::Deserialize;
 
+use crate::effects::Effect;
+
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -34,6 +36,15 @@ pub struct Settings {
     /// Hand the lighting back to the keyboard while nothing plays.
     pub release_when_silent: bool,
     pub release_after_sec: f32,
+    /// Animation while no music plays: "off" or an `Effect` code.
+    pub effect: String,
+    /// "idle": after `effect_after_sec` without keyboard or mouse input; "always": whenever nothing plays.
+    pub effect_when: String,
+    pub effect_after_sec: f32,
+    /// "natural", "scheme" (the visualizer's color) or "custom" (`effect_custom_color`).
+    pub effect_color: String,
+    /// The user's own animation color: one hex color or "#base>#highlight".
+    pub effect_custom_color: String,
 }
 
 impl Default for Settings {
@@ -59,6 +70,11 @@ impl Default for Settings {
             media_only: false,
             release_when_silent: true,
             release_after_sec: 3.0,
+            effect: "off".into(),
+            effect_when: "idle".into(),
+            effect_after_sec: 60.0,
+            effect_color: "natural".into(),
+            effect_custom_color: "#1060ff>#ffffff".into(),
         }
     }
 }
@@ -188,6 +204,31 @@ const COMMENTS: &[(&str, &str, &str)] = &[
         "Seconds of silence before the lighting goes back to the keyboard.",
         "Скільки секунд тиші чекати, перш ніж повернути підсвітку клавіатурі.",
     ),
+    (
+        "effect",
+        "Animation while no music plays: \"off\", \"rain\", \"storm\", \"matrix\", \"snow\", \"stars\", \"aurora\",\n\"ripples\", \"fire\", \"life\", \"clock\" or \"snake\".",
+        "Анімація, поки не грає музика: \"off\", \"rain\", \"storm\", \"matrix\", \"snow\", \"stars\", \"aurora\",\n\"ripples\", \"fire\", \"life\", \"clock\" або \"snake\".",
+    ),
+    (
+        "effect_when",
+        "\"idle\": after effect_after_sec without keyboard or mouse input, until you use them again or the\nkeyboard's Dim After passes. \"always\": whenever no music plays.",
+        "\"idle\": через effect_after_sec без клавіатури й миші, доки ними не скористатися або не мине\nDim After клавіатури. \"always\": завжди, коли не грає музика.",
+    ),
+    (
+        "effect_after_sec",
+        "Seconds without keyboard or mouse input before the animation starts.",
+        "Скільки секунд без клавіатури й миші чекати, перш ніж запустити анімацію.",
+    ),
+    (
+        "effect_color",
+        "Animation colors: \"natural\", \"scheme\" (the visualizer's color) or \"custom\".",
+        "Кольори анімації: \"natural\" (природні), \"scheme\" (як у візуалізатора) або \"custom\" (свої).",
+    ),
+    (
+        "effect_custom_color",
+        "Your own animation color for \"custom\": one hex color or \"#base>#highlight\".",
+        "Ваш колір анімації для \"custom\": один hex-колір або \"#основний>#відблиск\".",
+    ),
 ];
 
 fn quote(s: &str) -> String {
@@ -208,6 +249,14 @@ fn quote(s: &str) -> String {
 impl Settings {
     pub fn color_mode(&self) -> ColorMode {
         parse_color_mode(&self.color)
+    }
+
+    pub fn effect(&self) -> Option<Effect> {
+        Effect::parse(&self.effect)
+    }
+
+    pub fn effect_always(&self) -> bool {
+        self.effect_when == "always"
     }
 
     pub fn ukrainian(&self) -> bool {
@@ -241,6 +290,16 @@ impl Settings {
         self.hue_speed = finite_or(self.hue_speed, d.hue_speed).clamp(-5.0, 5.0);
         self.audio_device = self.audio_device.trim().to_string();
         self.release_after_sec = finite_or(self.release_after_sec, d.release_after_sec).clamp(0.5, 600.0);
+        self.effect = self.effect().map_or("off", Effect::code).into();
+        self.effect_when = if self.effect_when.trim().eq_ignore_ascii_case("always") { "always" } else { "idle" }.into();
+        self.effect_after_sec = finite_or(self.effect_after_sec, d.effect_after_sec).clamp(10.0, 3600.0);
+        self.effect_color = match self.effect_color.trim().to_ascii_lowercase().as_str() {
+            c @ ("scheme" | "custom") => c.into(),
+            _ => "natural".into(),
+        };
+        if !own(&self.effect_custom_color) {
+            self.effect_custom_color = d.effect_custom_color;
+        }
         self
     }
 
@@ -304,6 +363,11 @@ impl Settings {
             ("media_only", self.media_only.to_string()),
             ("release_when_silent", self.release_when_silent.to_string()),
             ("release_after_sec", format!("{:?}", self.release_after_sec)),
+            ("effect", quote(&self.effect)),
+            ("effect_when", quote(&self.effect_when)),
+            ("effect_after_sec", format!("{:?}", self.effect_after_sec)),
+            ("effect_color", quote(&self.effect_color)),
+            ("effect_custom_color", quote(&self.effect_custom_color)),
         ];
         let mut out = comment("header");
         for (key, value) in &values {
@@ -352,6 +416,23 @@ mirror = true").unwrap();
     fn sanitize_normalizes_language_and_theme() {
         let s = Settings { language: "UK".into(), theme: "Neon".into(), ..Settings::default() }.sanitized();
         assert_eq!((s.language.as_str(), s.theme.as_str()), ("uk", "auto"));
+    }
+
+    #[test]
+    fn sanitize_normalizes_effects() {
+        let s = Settings {
+            effect: " Matrix ".into(),
+            effect_when: "ALWAYS".into(),
+            effect_after_sec: 1.0,
+            effect_color: "neon".into(),
+            effect_custom_color: "rainbow".into(),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!((s.effect.as_str(), s.effect_when.as_str(), s.effect_color.as_str()), ("matrix", "always", "natural"));
+        assert_eq!(s.effect_after_sec, 10.0);
+        assert_eq!(s.effect_custom_color, Settings::default().effect_custom_color);
+        assert_eq!(Settings { effect: "lava".into(), ..Settings::default() }.sanitized().effect(), None);
     }
 
     #[test]

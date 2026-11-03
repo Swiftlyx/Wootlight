@@ -5,17 +5,20 @@ use std::{
     os::windows::process::CommandExt,
     path::{Path, PathBuf},
     process, ptr, thread,
+    time::Duration,
 };
 
 use windows_sys::Win32::{
-    Foundation::{ERROR_ALREADY_EXISTS, ERROR_SUCCESS, GetLastError, HWND, LPARAM, LRESULT, WPARAM},
+    Foundation::{ERROR_ALREADY_EXISTS, ERROR_SUCCESS, GetLastError, HWND, LPARAM, LRESULT, SYSTEMTIME, WPARAM},
     System::{
         Com::{COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoUninitialize},
         LibraryLoader::GetModuleHandleW,
         Registry::{HKEY, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW},
+        SystemInformation::{GetLocalTime, GetTickCount},
         Threading::CreateMutexW,
     },
     UI::{
+        Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO},
         Shell::{SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, ShellExecuteExW},
         WindowsAndMessaging::{
             CreateWindowExW, DefWindowProcW, FindWindowW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK,
@@ -75,6 +78,30 @@ pub fn windows_version() -> String {
     // Windows 11 still reports itself as Windows 10 in ProductName; the build tells them apart.
     let major = if build.parse::<u32>().is_ok_and(|b| b >= 22000) { 11 } else { 10 };
     format!("Windows {major} {release} (build {build})")
+}
+
+/// Time since the last keyboard or mouse input in this session.
+pub fn idle_time() -> Option<Duration> {
+    let mut info = LASTINPUTINFO { cbSize: size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
+    // SAFETY: fills a local struct whose size is set.
+    unsafe {
+        if GetLastInputInfo(&mut info) == 0 {
+            return None;
+        }
+        // Both tick counts wrap after 49 days.
+        Some(Duration::from_millis(u64::from(GetTickCount().wrapping_sub(info.dwTime))))
+    }
+}
+
+/// Local hour, minute and second.
+pub fn local_clock() -> (u32, u32, u32) {
+    // SAFETY: fills a local struct.
+    let t = unsafe {
+        let mut t: SYSTEMTIME = std::mem::zeroed();
+        GetLocalTime(&mut t);
+        t
+    };
+    (u32::from(t.wHour), u32::from(t.wMinute), u32::from(t.wSecond))
 }
 
 pub fn message_box(text: &str, error: bool) {

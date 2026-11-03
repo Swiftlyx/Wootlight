@@ -168,6 +168,31 @@ pub fn windows_version() -> String {
     format!("macOS {version} ({arch}{})", if translated { ", Rosetta" } else { "" })
 }
 
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGEventSourceSecondsSinceLastEventType(state: i32, event_type: u32) -> f64;
+}
+
+/// Time since the last keyboard, mouse or trackpad input in this login session.
+pub fn idle_time() -> Option<Duration> {
+    // kCGEventSourceStateCombinedSessionState and kCGAnyInputEventType.
+    // SAFETY: a plain query without pointers.
+    let secs = unsafe { CGEventSourceSecondsSinceLastEventType(0, u32::MAX) };
+    (secs.is_finite() && secs >= 0.0).then(|| Duration::from_secs_f64(secs))
+}
+
+/// Local hour, minute and second.
+pub fn local_clock() -> (u32, u32, u32) {
+    // SAFETY: localtime_r fills a local struct from the current time.
+    let t = unsafe {
+        let now = libc::time(std::ptr::null_mut());
+        let mut t: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&now, &mut t);
+        t
+    };
+    (t.tm_hour as u32, t.tm_min as u32, t.tm_sec as u32)
+}
+
 /// An alert with an OK button; on the main thread through AppKit, elsewhere through osascript.
 pub fn message_box(text: &str, error: bool) {
     eprintln!("{text}");

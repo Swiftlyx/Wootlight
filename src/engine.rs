@@ -18,6 +18,7 @@ use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninit
 use crate::{
     audio::{self, Capture},
     dsp::{BarDynamics, DynamicsConfig, Spectrum, WINDOW},
+    effects::{Effect, Effects, Palette},
     layout::Layout,
     log,
     media::MediaSessions,
@@ -25,6 +26,7 @@ use crate::{
     render::{FRAME_LEN, Frame, Renderer},
     sdk::{KeyboardInfo, Sdk},
     settings::Settings,
+    win,
 };
 
 const KEEPALIVE: Duration = Duration::from_secs(1);
@@ -60,6 +62,8 @@ const RESUME_AFTER: Duration = Duration::from_millis(200);
 /// Analysis rate limits, frames per second.
 const MIN_RATE: f32 = 30.0;
 const MAX_RATE: f32 = 360.0;
+/// How often the time since the last keyboard or mouse input is read.
+const INPUT_POLL: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Status {
@@ -68,6 +72,8 @@ pub struct Status {
     pub problem: Option<String>,
     /// The keyboard shows its own lighting because nothing is playing.
     pub idle: bool,
+    /// Wootility's Dim After of the keyboard, `ZERO` when off; None until read or when unreadable.
+    pub dim_after: Option<Duration>,
 }
 
 /// Decides who owns the lighting: the keyboard after a stretch of silence, the
@@ -107,6 +113,8 @@ pub enum Owner {
     Live,
     /// Nothing plays; the keyboard shows its own profile.
     Idle,
+    /// Nothing plays; an effect animates the keyboard.
+    Effect,
     Paused,
     NoKeyboard,
 }
@@ -158,6 +166,8 @@ pub struct Shared {
     outbox_changed: Condvar,
     /// Refresh rate of the monitor showing the window, 0 while it is hidden.
     ui_hz: AtomicU32,
+    /// The window shows the effects page, so the effect plays as a preview.
+    effect_preview: AtomicBool,
     /// Progress counter of each engine thread and what it does now, for the watchdog.
     beats: [AtomicU64; 3],
     doing: Mutex<[&'static str; 3]>,
@@ -182,6 +192,7 @@ impl Shared {
             outbox: Mutex::new(Outbox { seq: 0, generation: 0, frame: [0; FRAME_LEN] }),
             outbox_changed: Condvar::new(),
             ui_hz: AtomicU32::new(0),
+            effect_preview: AtomicBool::new(false),
             beats: Default::default(),
             doing: Mutex::new([""; 3]),
             quit: AtomicBool::new(false),
@@ -250,6 +261,11 @@ impl Shared {
     /// The window asks for analysis at its monitor's refresh rate; 0 when it is hidden.
     pub fn set_ui_hz(&self, hz: u32) {
         self.ui_hz.store(hz, Ordering::Relaxed);
+    }
+
+    /// The window opened or left the effects page.
+    pub fn set_effect_preview(&self, on: bool) {
+        self.effect_preview.store(on, Ordering::Relaxed);
     }
 
     fn keyboard(&self) -> Option<KeyboardInfo> {
@@ -524,6 +540,7 @@ struct Pipeline {
     spectrum: Spectrum,
     dynamics: BarDynamics,
     renderer: Renderer,
+    effects: Effects,
     levels: Vec<f32>,
 }
 
@@ -545,6 +562,7 @@ impl Pipeline {
             spectrum: Spectrum::new(sample_rate, n, s.fmin, s.fmax, s.tilt_db),
             dynamics: BarDynamics::new(n, dynamics_config(s)),
             renderer,
+            effects: Effects::new(&layout),
             levels: vec![0.0; n],
             layout,
         }
@@ -632,6 +650,56 @@ fn describe_behavior(s: &Settings) -> String {
     )
 }
 
+/// Whether `s.effect` shows now: never over music; always as a preview or when set to always;
+/// otherwise once the keyboard and mouse have rested `effect_after_sec`, until the keyboard's
+/// Dim After passes (unless it is off or unknown).
+fn effect_shows(s: &Settings, music: bool, preview: bool, idle: Option<Duration>, dim_after: Option<Duration>) -> bool {
+    if s.effect().is_none() || music {
+        return false;
+    }
+    if preview || s.effect_always() {
+        return true;
+    }
+    let Some(idle) = idle else { return false };
+    idle >= Duration::from_secs_f32(s.effect_after_sec) && dim_after.is_none_or(|dim| dim.is_zero() || idle < dim)
+}
+
+/// Why an effect started or stopped, for the log; `was_preview` tells whether the preview showed it.
+fn effect_reason(s: &Settings, starts: bool, music: bool, preview: bool, was_preview: bool, idle: Option<Duration>, dim_after: Option<Duration>) -> String {
+    let idle_secs = idle.map_or(0.0, |d| d.as_secs_f32());
+    if starts {
+        return if preview {
+            "effects page open".into()
+        } else if s.effect_always() {
+            "no music, set to always".into()
+        } else {
+            format!("no keyboard or mouse input for {idle_secs:.0} s")
+        };
+    }
+    if music {
+        "music plays".into()
+    } else if s.effect().is_none() {
+        "turned off".into()
+    } else if was_preview && !preview {
+        "effects page closed".into()
+    } else if idle_secs < s.effect_after_sec {
+        "keyboard or mouse used".into()
+    } else if let Some(dim) = dim_after.filter(|d| !d.is_zero()) {
+        format!("the keyboard's Dim After of {:.0} min passed", dim.as_secs_f32() / 60.0)
+    } else {
+        "set to show when idle".into()
+    }
+}
+
+/// "5 min", "off" or "unknown", for the log.
+fn describe_dim_after(dim_after: Option<Duration>) -> String {
+    match dim_after {
+        None => "unknown".into(),
+        Some(d) if d.is_zero() => "off".into(),
+        Some(d) => format!("{:.0} min", d.as_secs_f32() / 60.0),
+    }
+}
+
 /// Why the analysis heard nothing for a while, for the log.
 fn silence_reason(settings: &Settings, media_playing: bool, capture: Option<&Capture>) -> String {
     if settings.media_only && !media_playing {
@@ -664,6 +732,12 @@ fn run_analysis(shared: &Shared) {
     let mut seen_keyboard = 0;
     let mut silence = SilenceGate::default();
     let mut owned = false;
+    let mut idle: Option<Duration> = None;
+    let mut dim_after: Option<Duration> = None;
+    let mut next_input_poll = Instant::now();
+    let mut showing: Option<Effect> = None;
+    let mut previewed = false;
+    let mut palette: Option<(u64, Effect, Palette)> = None;
     let mut behavior = String::new();
     let mut samples = vec![0.0f32; WINDOW];
     let mut frame: Frame = [0; FRAME_LEN];
@@ -694,6 +768,7 @@ fn run_analysis(shared: &Shared) {
             pipeline = None;
             silence = SilenceGate::default();
             owned = false;
+            showing = None;
             shared.set_wants_lighting(false);
             shared.publish_paused();
             shared.update_status(|s| {
@@ -776,7 +851,8 @@ fn run_analysis(shared: &Shared) {
         }
 
         let release_after = Duration::from_secs_f32(settings.release_after_sec);
-        let owns = silence.update(&samples, now, release_after) || !settings.release_when_silent;
+        let music = silence.update(&samples, now, release_after);
+        let owns = music || !settings.release_when_silent;
         if owns != owned {
             let source = capture.as_ref().map_or("no audio source", |c| c.name.as_str());
             if !owns {
@@ -788,8 +864,26 @@ fn run_analysis(shared: &Shared) {
             }
             owned = owns;
         }
-        shared.set_wants_lighting(owns);
-        shared.update_status(|s| s.idle = !owns);
+
+        if now >= next_input_poll {
+            next_input_poll = now + INPUT_POLL;
+            idle = win::idle_time();
+            dim_after = shared.status().dim_after;
+        }
+        let preview = shared.effect_preview.load(Ordering::Relaxed) && shared.ui_hz.load(Ordering::Relaxed) > 0;
+        let effect = settings.effect().filter(|_| effect_shows(&settings, music, preview, idle, dim_after));
+        if effect != showing {
+            match (showing, effect) {
+                (_, Some(e)) => log!("{}: showing {}", effect_reason(&settings, true, music, preview, previewed, idle, dim_after), e.code()),
+                (Some(e), None) => log!("{}: {} stopped", effect_reason(&settings, false, music, preview, previewed, idle, dim_after), e.code()),
+                (None, None) => {}
+            }
+            showing = effect;
+        }
+        previewed = preview;
+        let lights = owns || effect.is_some();
+        shared.set_wants_lighting(lights);
+        shared.update_status(|s| s.idle = !lights);
 
         let keyboard_version = shared.keyboard_version.load(Ordering::SeqCst);
         if keyboard_version != seen_keyboard {
@@ -812,9 +906,23 @@ fn run_analysis(shared: &Shared) {
         p.spectrum.bands_db(&samples, &mut p.levels);
         p.dynamics.update(&p.levels, dt);
         p.renderer.render(&p.dynamics.bars, dt, &mut frame);
+        match effect {
+            Some(e) => {
+                if palette.as_ref().is_none_or(|(version, of, _)| *version != seen_version || *of != e) {
+                    palette = Some((seen_version, e, Palette::for_settings(&settings, e)));
+                }
+                let colors = palette.as_ref().map(|(_, _, colors)| colors).expect("set above");
+                let clock = if e == Effect::Clock { win::local_clock() } else { (0, 0, 0) };
+                p.effects.render(e, colors, settings.brightness, dt, clock, &mut frame);
+            }
+            // The next time an effect shows, it starts afresh.
+            None => p.effects.restart(),
+        }
 
         let owner = if shared.keyboard_missing.load(Ordering::SeqCst) {
             Owner::NoKeyboard
+        } else if effect.is_some() {
+            Owner::Effect
         } else if !owns {
             Owner::Idle
         } else if known.is_some() {
@@ -823,7 +931,7 @@ fn run_analysis(shared: &Shared) {
             Owner::Starting
         };
         shared.publish(&frame, &p.dynamics.bars, p.renderer.hue_offset(), owner, known.as_ref());
-        if owns {
+        if lights {
             shared.push_frame(&frame);
         }
 
@@ -897,6 +1005,12 @@ fn run_keyboard(shared: &Shared) {
             if !identified {
                 log!("keyboard: {} ({}x{}, type {}, layout {})", info.model, info.rows, info.cols, info.device_type, info.layout);
             }
+            // Read on every connect, so a change in Wootility shows up at the next one.
+            let dim_after = sdk.dim_after();
+            if !identified || shared.status().dim_after != dim_after {
+                log!("keyboard Dim After: {}", describe_dim_after(dim_after));
+            }
+            shared.update_status(|s| s.dim_after = dim_after);
             shared.keyboard_missing.store(false, Ordering::SeqCst);
             shared.update_status(|s| s.keyboard = Some(info.model.clone()));
             shared.set_keyboard(info);
@@ -976,6 +1090,27 @@ mod tests {
     use super::*;
 
     const RELEASE: Duration = Duration::from_secs(3);
+
+    #[test]
+    fn effects_follow_input_and_dim_after() {
+        let s = Settings { effect: "rain".into(), effect_after_sec: 60.0, ..Settings::default() };
+        let secs = |v: u64| Some(Duration::from_secs(v));
+        let five_min = secs(300);
+        assert!(!effect_shows(&s, false, false, secs(30), five_min), "before the wait");
+        assert!(effect_shows(&s, false, false, secs(90), five_min));
+        assert!(!effect_shows(&s, false, false, secs(301), five_min), "the keyboard dims now");
+        assert!(effect_shows(&s, false, false, secs(3600), Some(Duration::ZERO)), "Dim After off");
+        assert!(effect_shows(&s, false, false, secs(3600), None), "Dim After unknown");
+        assert!(!effect_shows(&s, false, false, None, None), "no input time");
+        assert!(!effect_shows(&s, true, true, secs(90), None), "never over music");
+        assert!(effect_shows(&s, false, true, secs(0), five_min), "the effects page previews it");
+        let short_dim = Settings { effect_after_sec: 300.0, ..s.clone() };
+        assert!(!effect_shows(&short_dim, false, false, secs(400), five_min), "dims before it would start");
+        let always = Settings { effect_when: "always".into(), ..s.clone() };
+        assert!(effect_shows(&always, false, false, secs(0), five_min));
+        let off = Settings { effect: "off".into(), ..s };
+        assert!(!effect_shows(&off, false, true, secs(3600), None));
+    }
 
     fn feed(gate: &mut SilenceGate, start: Instant, from_ms: u64, to_ms: u64, level: f32) -> bool {
         let samples = vec![level; 64];

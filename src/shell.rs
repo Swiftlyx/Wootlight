@@ -13,7 +13,7 @@ use crate::{
     tray,
     ui::{
         self, Command, glyph,
-        i18n::{Lang, T, tr},
+        i18n::{Lang, T, effect_label, tr},
         icon::{self, Mark},
         menu::MenuEntry,
         window,
@@ -90,6 +90,7 @@ impl App {
         }
         match (&st.keyboard, self.shared.preview().owner) {
             (Some(k), Owner::Idle) => format!("{k} · {}", tr(lang, T::StateIdle)),
+            (Some(k), Owner::Effect) => format!("{k} · {}", tr(lang, effect_label(s.effect()))),
             (Some(k), _) => format!("{k} · {}", tr(lang, T::StateLive)),
             (None, Owner::Starting) => tr(lang, T::StateStarting).into(),
             (None, _) => tr(lang, T::ConnectKeyboard).into(),
