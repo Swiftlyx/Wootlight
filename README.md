@@ -138,7 +138,8 @@ With *Get updates: Automatic*, Wootlight asks GitHub for the latest release half
 starts and every 6 hours. A new `Wootlight.exe` is downloaded next to the running one, checked
 against the release's `SHA256SUMS.txt`, and swapped in while nobody uses the computer and no music
 plays, or at the next start; *Update to … and restart* does it at once. *Notify* only shows the new
-version, and *Off* never contacts GitHub. The check sends nothing but the request itself.
+version, and *Off* never contacts GitHub. The check sends nothing but the request itself. Versions
+from 1.4.0 on update themselves; from an older one, download 1.4.0 by hand once.
 
 *Start with Windows* creates a Task Scheduler task, *Wootlight*, that starts the app when you sign
 in. It needs no administrator rights, and moving `Wootlight.exe` to another folder updates the task

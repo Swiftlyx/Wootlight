@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 — 2026-11-04
 
 - A new *Effects* page with nine animations for the time no music plays: rain, a thunderstorm, the
   Matrix, snow, a starry sky, an aurora, ripples, fire and a snake. *When idle*, an effect
