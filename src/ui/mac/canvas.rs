@@ -542,7 +542,7 @@ mod tests {
     use crate::ui::glyph;
 
     const W: usize = 420;
-    const H: usize = 320;
+    const H: usize = 340;
     const SCALE: usize = 2;
 
     struct Bitmap {
@@ -677,7 +677,8 @@ mod tests {
             glyph::HISTORY,
         ];
         for (i, g) in glyphs.iter().enumerate() {
-            let (cx, cy) = (20.0 + i as f32 * 23.0, 290.0);
+            // Rows of 17 symbols fit the bitmap's width.
+            let (cx, cy) = (20.0 + (i % 17) as f32 * 23.0, 290.0 + (i / 17) as f32 * 24.0);
             c.fill_rect(Rect::new(cx - 10.0, cy - 0.25, cx + 10.0, cy + 0.25), Color::rgb8(255, 170, 170));
             c.fill_rect(Rect::new(cx - 0.25, cy - 10.0, cx + 0.25, cy + 10.0), Color::rgb8(255, 170, 170));
             c.glyph(*g, cx, cy, 16.0, INK);
@@ -718,7 +719,8 @@ mod tests {
 
         // Symbols land on their points.
         for (i, g) in glyphs.iter().enumerate() {
-            let (cx, cy) = (20.0 + i as f32 * 23.0, 290.0);
+            // Rows of 17 symbols fit the bitmap's width.
+            let (cx, cy) = (20.0 + (i % 17) as f32 * 23.0, 290.0 + (i / 17) as f32 * 24.0);
             let (x, y) = b.ink_center(Rect::new(cx - 11.0, cy - 11.0, cx + 11.0, cy + 11.0)).expect("glyph ink");
             assert!((x - cx).abs() < 2.5 && (y - cy).abs() < 2.5, "glyph {:X} centered at ({x}, {y})", *g as u32);
         }
